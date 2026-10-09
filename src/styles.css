@@ -1,0 +1,1702 @@
+/* ==========================================================================
+   SALAH — Better Prayers. A Brighter You.
+   Design Tokens & Modern Aesthetic (Reference Replicated + Fully Responsive)
+   Canvas: Soft Linen Green (#F4F6F5)
+   Sidebar: Crisp Off-White (#F8FAF9)
+   Accent: Deep Forest Pine (#1E5144)
+   Cards: #FFFFFF with 16px radius & subtle 1px border
+   ========================================================================== */
+
+:root {
+  /* Surfaces */
+  --salah-canvas: #F4F6F5;
+  --salah-sidebar: #F8FAF9;
+  --salah-sidebar-border: #EBEFE8;
+  --salah-card: #FFFFFF;
+  --salah-card-border: #E8ECE9;
+
+  /* Brand Colors */
+  --salah-green: #1E5144;
+  --salah-green-hover: #164035;
+  --salah-green-subtle: #E8F3EE;
+  --salah-green-light: #E8F0EC;
+  --salah-green-tint: #D3DFD8;
+
+  /* Typography Colors */
+  --salah-text-primary: #111827;
+  --salah-text-secondary: #4B5563;
+  --salah-text-muted: #6B7280;
+  --salah-text-light: #9CA3AF;
+
+  /* Badges & Indicators */
+  --salah-badge-gray-bg: #F3F4F6;
+  --salah-badge-gray-text: #6B7280;
+  --salah-progress-track: #E5E7EB;
+
+  /* Legacy aliases for settings & widget */
+  --bg-base: #F4F6F5;
+  --text: #111827;
+  --text-2: #4B5563;
+  --text-3: #9CA3AF;
+  --brand: #1E5144;
+  --brand-hover: #164035;
+  --brand-subtle: #E8F3EE;
+  --line: #E8ECE9;
+  --line-strong: #D1D5DB;
+
+  --font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  accent-color: var(--salah-green);
+  color: var(--salah-text-primary);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--salah-canvas);
+  color: var(--salah-text-primary);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+
+body.widget-body {
+  min-width: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+button, input, select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: none;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button:not(:disabled), select, input {
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   APP WINDOW SHELL
+   ========================================================================== */
+
+.salah-window-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--salah-canvas);
+  user-select: none;
+}
+
+/* ==========================================================================
+   APP BODY & SLIM ICON RAIL DOCK
+   ========================================================================== */
+
+.salah-app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   OFF-CANVAS SLIDE-OUT SIDEBAR DRAWER (WEBSITE PATTERN)
+   ========================================================================== */
+
+.salah-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(17, 24, 20, 0.4);
+  backdrop-filter: blur(3px);
+  z-index: 998;
+  animation: fadeInBackdrop 200ms ease forwards;
+}
+
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.salah-slide-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 290px;
+  max-width: 85vw;
+  background-color: var(--salah-sidebar);
+  border-right: 1px solid var(--salah-sidebar-border);
+  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.16);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 20px 20px;
+  box-sizing: border-box;
+  transform: translateX(-100%);
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+  user-select: none;
+}
+
+.salah-slide-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  width: 100%;
+}
+
+.drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.drawer-brand-name {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.drawer-brand-tagline {
+  font-size: 11px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  margin-top: 3px;
+}
+
+.drawer-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--salah-text-muted);
+  cursor: pointer;
+  transition: all 160ms ease;
+  flex-shrink: 0;
+}
+
+.drawer-close-btn:hover {
+  background-color: #EAEFEA;
+  color: var(--salah-text-primary);
+  border-color: #DDE5E0;
+}
+
+.drawer-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.drawer-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--salah-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.drawer-nav-item:hover {
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  border-color: #D8E7E0;
+}
+
+.drawer-nav-item.active {
+  background-color: var(--salah-green);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(30, 81, 68, 0.25);
+}
+
+.drawer-nav-item.active svg {
+  color: #FFFFFF;
+}
+
+.drawer-divider {
+  height: 1px;
+  background-color: var(--salah-sidebar-border);
+  margin: 18px 0;
+}
+
+.drawer-quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.drawer-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background-color: #FFFFFF;
+  border: 1px solid var(--salah-card-border);
+  color: var(--salah-text-secondary);
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.drawer-action-btn:hover {
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  border-color: #C8DBD1;
+}
+
+.drawer-action-btn.highlight {
+  background-color: var(--salah-green-subtle);
+  border-color: #B5D2C3;
+  color: var(--salah-green);
+}
+
+.drawer-footer-user {
+  padding-top: 14px;
+  border-top: 1px solid var(--salah-sidebar-border);
+}
+
+.drawer-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.drawer-user-avatar {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background-color: var(--salah-green-subtle);
+  border: 2px solid var(--salah-green);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--salah-green);
+}
+
+.drawer-avatar-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: #10B981;
+  border: 2px solid #FFFFFF;
+}
+
+.drawer-user-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+}
+
+.drawer-user-streak {
+  font-size: 11px;
+  color: var(--salah-text-muted);
+  margin-top: 1px;
+}
+
+.salah-menu-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background-color: #FFFFFF;
+  border: 1px solid var(--salah-card-border);
+  color: var(--salah-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.salah-menu-trigger-btn:hover {
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  border-color: #C8DBD1;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(30, 81, 68, 0.1);
+}
+
+.salah-menu-trigger-btn:active {
+  transform: scale(0.97);
+}
+
+/* ==========================================================================
+   MAIN CANVAS & TOP HEADER
+   ========================================================================== */
+
+.salah-main-canvas {
+  flex: 1;
+  background-color: var(--salah-canvas);
+  overflow-y: auto;
+  padding: 24px 30px 32px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.salah-main-canvas::-webkit-scrollbar {
+  width: 6px;
+}
+
+.salah-main-canvas::-webkit-scrollbar-thumb {
+  background: #D5DDD8;
+  border-radius: 3px;
+}
+
+.salah-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: nowrap;
+  padding-bottom: 2px;
+}
+
+.header-greeting-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.header-greeting-text {
+  min-width: 0;
+}
+
+.header-greeting-title {
+  font-size: clamp(19px, 2vw, 24px);
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  letter-spacing: -0.4px;
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.header-location-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 2.5px 8.5px;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+
+.header-greeting-sub {
+  font-size: 13px;
+  color: var(--salah-text-muted);
+  margin: 2px 0 0;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.header-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.header-date-stack {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.header-gregorian-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.header-hijri-date {
+  font-size: 11px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.header-meta-divider {
+  width: 1px;
+  height: 34px;
+  background-color: #DDE3DF;
+  flex-shrink: 0;
+}
+
+.header-progress-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.header-progress-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.header-progress-count {
+  font-size: 10.5px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.header-progress-bar-track {
+  width: 100%;
+  height: 4px;
+  background-color: var(--salah-progress-track);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.header-progress-bar-fill {
+  height: 100%;
+  background-color: var(--salah-green);
+  border-radius: 999px;
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   DASHBOARD GRID & CARDS
+   ========================================================================== */
+
+.salah-bento-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.bento-column-primary,
+.bento-column-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.salah-card {
+  background-color: var(--salah-card);
+  border: 1px solid var(--salah-card-border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+  position: relative;
+  min-width: 0; /* Prevents child content from causing grid blowout */
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.salah-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+/* ==========================================================================
+   CARD 1: NEXT PRAYER
+   ========================================================================== */
+
+.card-top-eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.card-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--salah-text-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.next-prayer-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.next-prayer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.next-prayer-name {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+}
+
+.next-prayer-time-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  width: fit-content;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-pill.upcoming {
+  background-color: var(--salah-badge-gray-bg);
+  color: var(--salah-badge-gray-text);
+}
+
+.status-pill.current, .status-pill.completed {
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+}
+
+.donut-gauge-container {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+}
+
+.donut-gauge-svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+
+.donut-gauge-labels {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4px;
+}
+
+.donut-gauge-time {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.donut-gauge-sub {
+  font-size: 10px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.btn-card-prayed {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 180ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+  white-space: nowrap;
+}
+
+.btn-card-prayed.pending {
+  background-color: var(--salah-green-tint);
+  color: #435E52;
+}
+
+.btn-card-prayed.pending:hover {
+  background-color: #C5D4CC;
+  color: #273E34;
+}
+
+.btn-card-prayed.done {
+  background-color: var(--salah-green);
+  color: #FFFFFF;
+}
+
+.btn-card-prayed.done:hover {
+  background-color: var(--salah-green-hover);
+}
+
+/* ==========================================================================
+   CARD 2: FIVE DAILY PRAYERS
+   ========================================================================== */
+
+.card-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.card-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.card-view-all-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--salah-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.card-view-all-link:hover {
+  color: var(--salah-green);
+}
+
+.prayers-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prayer-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 10px;
+  transition: all 140ms ease;
+  gap: 12px;
+  min-width: 0;
+}
+
+.prayer-list-item:hover {
+  background-color: #F8FAF9;
+}
+
+.prayer-list-item.item-current {
+  background-color: var(--salah-green-subtle);
+}
+
+.prayer-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.prayer-item-icon {
+  color: var(--salah-text-secondary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.prayer-item-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.prayer-item-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.prayer-item-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--salah-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.prayer-check-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 150ms ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.prayer-check-btn.completed {
+  background-color: var(--salah-green);
+  border: 1.5px solid var(--salah-green);
+  color: #FFFFFF;
+}
+
+.prayer-check-btn.current {
+  background-color: #FFFFFF;
+  border: 2px solid var(--salah-green);
+  position: relative;
+}
+
+.prayer-check-btn.current::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--salah-green);
+}
+
+.prayer-check-btn.upcoming {
+  background-color: #FFFFFF;
+  border: 1.5px solid #D1D5DB;
+}
+
+.prayer-check-btn.upcoming:hover {
+  border-color: var(--salah-green);
+}
+
+/* ==========================================================================
+   CARD 3: TODAY'S SALAH
+   ========================================================================== */
+
+.today-salah-header {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.today-salah-header-pill {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--salah-green);
+  background-color: var(--salah-green-subtle);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.today-salah-track {
+  width: 100%;
+  height: 6px;
+  background-color: var(--salah-progress-track);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.today-salah-fill {
+  height: 100%;
+  background-color: var(--salah-green);
+  border-radius: 999px;
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.milestones-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 0 2px;
+  gap: 4px;
+}
+
+.milestone-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.milestone-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.milestone-circle.completed {
+  background-color: var(--salah-green);
+  border: 1.5px solid var(--salah-green);
+  color: #FFFFFF;
+}
+
+.milestone-circle.current {
+  background-color: #FFFFFF;
+  border: 2px solid var(--salah-green);
+  position: relative;
+}
+
+.milestone-circle.current::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--salah-green);
+}
+
+.milestone-circle.upcoming {
+  background-color: #FFFFFF;
+  border: 1.5px solid #D1D5DB;
+}
+
+.milestone-label {
+  font-size: 10.5px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.consistency-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid #F1F4F2;
+  margin-top: auto;
+  gap: 8px;
+}
+
+.consistency-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.consistency-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+  white-space: nowrap;
+}
+
+.consistency-sub {
+  font-size: 10.5px;
+  color: var(--salah-text-muted);
+  white-space: nowrap;
+}
+
+.streak-dots-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.streak-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--salah-progress-track);
+  flex-shrink: 0;
+}
+
+.streak-indicator-dot.active {
+  background-color: var(--salah-green);
+}
+
+/* ==========================================================================
+   CARD 4: FOCUS MODE
+   ========================================================================== */
+
+.focus-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.salah-toggle-switch {
+  width: 44px;
+  height: 24px;
+  background-color: #D1D5DB;
+  border-radius: 999px;
+  padding: 2px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background-color 200ms ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.salah-toggle-switch.active {
+  background-color: var(--salah-green);
+}
+
+.salah-toggle-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(0);
+}
+
+.salah-toggle-switch.active .salah-toggle-thumb {
+  transform: translateX(20px);
+}
+
+.focus-card-desc {
+  font-size: 11.5px;
+  color: var(--salah-text-muted);
+  line-height: 1.45;
+  margin-bottom: 14px;
+}
+
+.focus-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.focus-select-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.focus-field-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--salah-text-secondary);
+  white-space: nowrap;
+}
+
+.focus-field-select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background-color: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  font-size: 12px;
+  color: var(--salah-text-primary);
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.focus-field-select:focus {
+  border-color: var(--salah-green);
+}
+
+.focus-footer-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--salah-text-muted);
+  font-weight: 500;
+  margin-top: auto;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   CARD 5: SALAH REMINDER PROMPT
+   ========================================================================== */
+
+.reminder-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.reminder-dismiss-btn {
+  color: var(--salah-text-light);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 150ms ease;
+}
+
+.reminder-dismiss-btn:hover {
+  color: var(--salah-text-primary);
+  background-color: #F3F4F6;
+}
+
+.reminder-card-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.reminder-illustration {
+  flex-shrink: 0;
+}
+
+.reminder-text-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reminder-callout-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+.reminder-callout-sub {
+  font-size: 13px;
+  color: var(--salah-text-muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.reminder-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  flex-wrap: wrap;
+}
+
+.btn-reminder-prayed {
+  background-color: var(--salah-green);
+  color: #FFFFFF;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  white-space: nowrap;
+}
+
+.btn-reminder-prayed:hover {
+  background-color: var(--salah-green-hover);
+}
+
+.btn-reminder-again {
+  background-color: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  color: var(--salah-text-secondary);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.btn-reminder-again:hover {
+  background-color: #F9FAFB;
+  color: var(--salah-text-primary);
+}
+
+/* ==========================================================================
+   REMINDER SETTLED STATE
+   ========================================================================== */
+
+.reminder-settled-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 20px;
+}
+
+.reminder-settled-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.reminder-settled-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  display: grid;
+  place-items: center;
+}
+
+.reminder-settled-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+}
+
+.reminder-settled-sub {
+  font-size: 12px;
+  color: var(--salah-text-muted);
+  margin: 0;
+  max-width: 260px;
+  line-height: 1.45;
+}
+
+.reminder-reopen-btn {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--salah-green);
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ==========================================================================
+   RESPONSIVE BREAKPOINTS (INTERNATIONAL DESKTOP STANDARD)
+   ========================================================================== */
+
+@media (max-width: 1040px) {
+  .salah-main-canvas {
+    padding: 20px 20px 28px;
+    gap: 16px;
+  }
+
+  .salah-bento-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 14px;
+  }
+}
+
+@media (max-width: 780px) {
+  .salah-main-canvas {
+    padding: 16px 14px 24px;
+    gap: 14px;
+  }
+
+  .salah-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .header-meta-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .salah-bento-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* ==========================================================================
+   OTHER VIEWS (PRAYER TIMES, ACCOUNTABILITY, HISTORY, SETTINGS)
+   ========================================================================== */
+
+.view-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.view-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.view-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+  letter-spacing: -0.5px;
+}
+
+.view-subtitle {
+  font-size: 13px;
+  color: var(--salah-text-muted);
+}
+
+.view-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.view-full-card {
+  grid-column: 1 / -1;
+}
+
+.prayer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.prayer-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--salah-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--salah-card-border);
+}
+
+.prayer-table td {
+  padding: 10px;
+  border-bottom: 1px solid #F1F4F2;
+  color: var(--salah-text-primary);
+}
+
+.prayer-table tr:last-child td {
+  border-bottom: none;
+}
+
+.prayer-table tr.active td {
+  background-color: var(--salah-green-subtle);
+  font-weight: 600;
+  color: var(--salah-green);
+}
+
+/* Settings Inside View */
+.settings-view-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #EBF0EC;
+  padding: 4px;
+  border-radius: 12px;
+  width: fit-content;
+  flex-wrap: wrap;
+}
+
+.settings-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--salah-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.settings-tab-btn.active {
+  background-color: #FFFFFF;
+  color: var(--salah-green);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.settings-body-card {
+  background-color: #FFFFFF;
+  border: 1px solid var(--salah-card-border);
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setting-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--salah-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #F1F4F2;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  gap: 16px;
+}
+
+.setting-row-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--salah-text-primary);
+}
+
+.setting-sublabel {
+  font-size: 11.5px;
+  color: var(--salah-text-muted);
+}
+
+.setting-select, .setting-input {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  background-color: #FFFFFF;
+  font-size: 12.5px;
+  color: var(--salah-text-primary);
+  outline: none;
+}
+
+.setting-select:focus, .setting-input:focus {
+  border-color: var(--salah-green);
+}
+
+.setting-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background-color: var(--salah-green-subtle);
+  color: var(--salah-green);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.setting-btn:hover {
+  background-color: #D7EAE0;
+}
+
+/* ==========================================================================
+   DESKTOP FLOATING WIDGET
+   ========================================================================== */
+
+.prayer-widget {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 300px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  font-family: var(--font-family);
+  position: relative;
+  cursor: grab;
+  user-select: none;
+}
+
+.widget-grip {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #D1D5DB;
+}
+
+.widget-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: #9CA3AF;
+  cursor: pointer;
+}
+
+.widget-close:hover {
+  color: #111827;
+}
+
+.widget-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--salah-green-subtle);
+  color: var(--salah-green);
+  display: grid;
+  place-items: center;
+}
+
+.widget-copy {
+  display: flex;
+  flex-direction: column;
+  margin-left: 12px;
+}
+
+.widget-copy span {
+  font-size: 11px;
+  color: var(--salah-text-muted);
+}
+
+.widget-copy strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--salah-text-primary);
+}
+
+.prayer-widget section {
+  display: flex;
+  align-items: center;
+}
+
+.prayer-widget aside {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prayer-widget aside strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+}
+
+.prayer-widget aside span {
+  font-size: 11px;
+  color: var(--salah-text-muted);
+}
+
+.prayer-widget aside em {
+  font-size: 10px;
+  font-style: normal;
+  color: var(--salah-green);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   FOCUS PREVIEW & ONBOARDING
+   ========================================================================== */
+
+.focus-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(16px);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  text-align: center;
+  padding: 24px;
+}
+
+.focus-overlay h2 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.focus-overlay p {
+  font-size: 15px;
+  color: #D1D5DB;
+  max-width: 460px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.btn-focus-dismiss {
+  background: #FFFFFF;
+  color: #111827;
+  padding: 11px 26px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.btn-focus-dismiss:hover {
+  background: #F3F4F6;
+  transform: translateY(-1px);
+}
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.onboarding-card {
+  background: #FFFFFF;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding: 30px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-title {
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--salah-text-primary);
+}
+
+.onboarding-desc {
+  font-size: 13.5px;
+  color: var(--salah-text-secondary);
+  line-height: 1.5;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}

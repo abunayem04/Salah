@@ -1,0 +1,2464 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bell,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  EyeOff,
+  GripHorizontal,
+  Home,
+  Info,
+  LocateFixed,
+  MapPin,
+  Menu,
+  Minus,
+  Moon,
+  Pin,
+  Power,
+  RotateCcw,
+  Settings as SettingsIcon,
+  Sparkles,
+  Sun,
+  Sunrise,
+  Sunset,
+  Target,
+  Volume2,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { MWLAdapter, builtInMethods, methodIdForCountryCode, resolveMethod } from "../core/adapters";
+import { buildTrayLabel, formatHijriDateLocalized, prayerLabel, resolveLanguage, t, textDirection, type SupportedLanguage } from "../core/localization";
+import { calculateTodayAndTomorrow } from "../core/engine";
+import { civilDateFromDate, formatClock, zonedMidnight } from "../core/timeZone";
+import { currentPrayer, ishraq, longCountdown, nextPrayer, orderedTimes, shortCountdown } from "../core/prayerTimes";
+import { defaultJamaatTimes, defaultPrayerNotification, defaultSettings, resolvedNotification } from "../core/settings";
+import { inferCountryCode, inferCoordinatesFromTimeZone, popularCities, type CityLocation } from "../core/systemDetection";
+import { isObligatory, obligatoryPrayers } from "../core/types";
+import type { AppSettings, CalculationMethodAdapter, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
+
+type SidebarNav = "overview" | "prayerTimes" | "accountability" | "history" | "settings";
+type SettingsTab = "general" | "location" | "calculation" | "notifications" | "focus";
+
+type RuntimeScheduledEvent = {
+  id: string;
+  prayer?: Prayer;
+  atMs: number;
+  title: string;
+  body: string;
+  playSound: boolean;
+  sound?: NotificationSound;
+  playFullAdhan: boolean;
+  startFocus: boolean;
+};
+
+const prayerIcons: Record<Prayer, typeof Sunrise> = {
+  fajr: Sunrise,
+  sunrise: Sunrise,
+  dhuhr: Sun,
+  asr: Sparkles,
+  maghrib: Sunset,
+  isha: Moon,
+};
+
+const prayerNames: Record<Prayer, string> = {
+  fajr: "Fajr",
+  sunrise: "Sunrise",
+  dhuhr: "Dhuhr",
+  asr: "Asr",
+  maghrib: "Maghrib",
+  isha: "Isha",
+};
+
+const periodNames: Record<Prayer, { en: string; bn: string }> = {
+  fajr: { en: "Dawn", bn: "ঊষা" },
+  sunrise: { en: "Morning", bn: "প্রভাত" },
+  dhuhr: { en: "Midday", bn: "মধ্যাহ্ন" },
+  asr: { en: "Afternoon", bn: "অপরাহ্ন" },
+  maghrib: { en: "Sunset", bn: "গোধূলি" },
+  isha: { en: "Night", bn: "নিশি" },
+};
+
+/* ==========================================================================
+   ISLAMIC ROSETTE LOGO & MOSQUE ILLUSTRATION
+   ========================================================================== */
+
+function IslamicRosetteLogo({ size = 32 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0 }}>
+      <path
+        d="M24 3 L29 13.5 L40.5 8.5 L35.5 20 L46 24 L35.5 28 L40.5 39.5 L29 34.5 L24 45 L19 34.5 L7.5 39.5 L12.5 28 L2 24 L12.5 20 L7.5 8.5 L19 13.5 Z"
+        stroke="#1E5144"
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <circle cx="24" cy="24" r="7.5" stroke="#1E5144" strokeWidth="2" />
+      <circle cx="24" cy="24" r="2.5" fill="#1E5144" />
+    </svg>
+  );
+}
+
+function RadiantIslamicLogo({ size = 32 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0, filter: "drop-shadow(0 0 8px rgba(52, 211, 153, 0.5))" }}>
+      <defs>
+        <linearGradient id="dockRosetteGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6EE7B7" />
+          <stop offset="45%" stopColor="#10B981" />
+          <stop offset="100%" stopColor="#047857" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M24 3 L29 13.5 L40.5 8.5 L35.5 20 L46 24 L35.5 28 L40.5 39.5 L29 34.5 L24 45 L19 34.5 L7.5 39.5 L12.5 28 L2 24 L12.5 20 L7.5 8.5 L19 13.5 Z"
+        stroke="url(#dockRosetteGrad)"
+        strokeWidth="2.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        fill="rgba(16, 185, 129, 0.14)"
+      />
+      <circle cx="24" cy="24" r="7.5" stroke="url(#dockRosetteGrad)" strokeWidth="2.2" />
+      <circle cx="24" cy="24" r="2.8" fill="url(#dockRosetteGrad)" />
+    </svg>
+  );
+}
+
+function MosqueDomeIllustration({ size = 76 }: { size?: number }) {
+  return (
+    <div className="reminder-illustration" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
+        <circle cx="50" cy="50" r="48" fill="#E8F1EC" />
+        <circle cx="50" cy="28" r="14" fill="#DDE8E2" opacity="0.6" />
+        <path d="M66 26 Q69 23 72 25 Q75 23 78 26" stroke="#7A9B8D" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+        <path d="M72 20 Q74 18 76 19 Q78 18 80 20" stroke="#7A9B8D" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+        {/* Minaret */}
+        <path d="M22 68 L22 46 L26 46 L26 68 Z" fill="#6B9382" />
+        <path d="M20 46 L28 46 L24 38 Z" fill="#4E7867" />
+        <circle cx="24" cy="36" r="1.5" fill="#3D6454" />
+        {/* Back Dome */}
+        <path d="M50 42 C40 42 36 50 36 68 L64 68 C64 50 60 42 50 42 Z" fill="#5A8472" />
+        {/* Main Onion Dome */}
+        <path d="M50 34 C43 37 42 45 42 68 L58 68 C58 45 57 37 50 34 Z" fill="#3D6A58" />
+        {/* Dome Finial with Crescent */}
+        <path d="M50 34 L50 26" stroke="#2D5444" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="50" cy="24" r="2" fill="#2D5444" />
+        {/* Arch Doorway */}
+        <path d="M47 68 L47 57 C47 55 53 55 53 57 L53 68 Z" fill="#E8F1EC" />
+        {/* Ground */}
+        <rect x="15" y="68" width="70" height="18" fill="#4E7867" rx="3" />
+        <path d="M20 68 L80 68" stroke="#3D6454" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   MAIN APP COMPONENT
+   ========================================================================== */
+
+export function App() {
+  const isWidget = new URLSearchParams(window.location.search).get("widget") === "true";
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [storeReady, setStoreReady] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [nav, setNav] = useState<SidebarNav>("overview");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [focusPreview, setFocusPreview] = useState(false);
+  const [focusPrayer, setFocusPrayer] = useState<Prayer>("dhuhr");
+  const [nativeSchedulerAvailable, setNativeSchedulerAvailable] = useState(true);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | undefined>();
+  const [now, setNow] = useState(() => new Date());
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [focusIntervalMinutes, setFocusIntervalMinutes] = useState(5);
+  const [focusDurationMinutes, setFocusDurationMinutes] = useState(15);
+  const firedAlerts = useRef(new Set<string>());
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Prayer Completion Tracking
+  const todayKey = now.toISOString().slice(0, 10);
+  const [completedPrayers, setCompletedPrayers] = useState<Record<Prayer, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(`salah_completed_${new Date().toISOString().slice(0, 10)}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    // Realistic default matching screenshot
+    return { fajr: false, sunrise: false, dhuhr: true, asr: false, maghrib: false, isha: false };
+  });
+
+  const togglePrayer = (prayer: Prayer) => {
+    setCompletedPrayers((prev) => {
+      const next = { ...prev, [prayer]: !prev[prayer] };
+      try {
+        localStorage.setItem(`salah_completed_${todayKey}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const markPrayerCompleted = (prayer: Prayer) => {
+    setCompletedPrayers((prev) => {
+      const next = { ...prev, [prayer]: true };
+      try {
+        localStorage.setItem(`salah_completed_${todayKey}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const completedCount = obligatoryPrayers.filter((p) => completedPrayers[p]).length;
+
+  const streakDays = useMemo(() => {
+    const result: boolean[] = [];
+    const base = new Date(now);
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(base);
+      d.setDate(d.getDate() - i);
+      const key = `salah_completed_${d.toISOString().slice(0, 10)}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const count = obligatoryPrayers.filter((p) => parsed[p]).length;
+          result.push(count >= 3);
+        } catch {
+          result.push(i > 0);
+        }
+      } else {
+        // Fallback for previous days to display realistic streak dots
+        result.push(i >= 2);
+      }
+    }
+    return result;
+  }, [now, completedPrayers]);
+
+  const timeZone = settings.timeZoneMode.kind === "explicit"
+    ? settings.timeZoneMode.identifier
+    : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const language = resolveLanguage(settings.languageOverride);
+  const detectedCountryCode = inferCountryCode(timeZone);
+  const resolvedMethodId = settings.autoDetectMethod ? methodIdForCountryCode(detectedCountryCode) : settings.methodId;
+  const method = useMemo(
+    () => resolveMethod(resolvedMethodId, settings.hanafiAsr, settings.manualParameters) ?? MWLAdapter,
+    [resolvedMethodId, settings.hanafiAsr, settings.manualParameters],
+  );
+
+  const systemDetectedLocation = useMemo(
+    () => inferCoordinatesFromTimeZone(timeZone),
+    [timeZone],
+  );
+
+  const [detectedCityName, setDetectedCityName] = useState<string>(() => {
+    const tzMatch = inferCoordinatesFromTimeZone(
+      settings.timeZoneMode.kind === "explicit"
+        ? settings.timeZoneMode.identifier
+        : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    );
+    return tzMatch ? `${tzMatch.city}, ${tzMatch.country}` : "Auto Location";
+  });
+
+  const coordinates = useMemo(() => {
+    if (settings.locationMode === "manual") {
+      return settings.manualCoordinates;
+    }
+    const isIstanbulDefault =
+      Math.abs(settings.manualCoordinates.latitude - 41.0082) < 0.001 &&
+      Math.abs(settings.manualCoordinates.longitude - 28.9784) < 0.001;
+    if (isIstanbulDefault && systemDetectedLocation && timeZone !== "Europe/Istanbul") {
+      return {
+        latitude: systemDetectedLocation.latitude,
+        longitude: systemDetectedLocation.longitude,
+        elevation: systemDetectedLocation.elevation ?? 0,
+      };
+    }
+    return settings.manualCoordinates;
+  }, [settings.locationMode, settings.manualCoordinates, systemDetectedLocation, timeZone]);
+
+  // Background auto-detection of location from IP or GPS
+  useEffect(() => {
+    if (settings.locationMode !== "automatic") return;
+
+    let cancelled = false;
+
+    // Immediately sync if still default Istanbul
+    if (
+      systemDetectedLocation &&
+      Math.abs(settings.manualCoordinates.latitude - 41.0082) < 0.001 &&
+      Math.abs(settings.manualCoordinates.longitude - 28.9784) < 0.001 &&
+      timeZone !== "Europe/Istanbul"
+    ) {
+      updateSettings({
+        manualCoordinates: {
+          latitude: systemDetectedLocation.latitude,
+          longitude: systemDetectedLocation.longitude,
+          elevation: systemDetectedLocation.elevation ?? 0,
+        },
+      });
+      setDetectedCityName(`${systemDetectedLocation.city}, ${systemDetectedLocation.country}`);
+    }
+
+    // IP Geolocation query to fine-tune to exact city
+    fetch("https://ipapi.co/json/")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+          const lat = Number(data.latitude.toFixed(4));
+          const lon = Number(data.longitude.toFixed(4));
+          updateSettings({
+            manualCoordinates: { latitude: lat, longitude: lon, elevation: 0 },
+          });
+          const name = data.city ? `${data.city}, ${data.country_name || data.country}` : systemDetectedLocation ? `${systemDetectedLocation.city}, ${systemDetectedLocation.country}` : "Detected Location";
+          setDetectedCityName(name);
+        }
+      })
+      .catch(() => {
+        if (navigator.geolocation && !cancelled) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (cancelled) return;
+              updateSettings({
+                manualCoordinates: {
+                  latitude: Number(pos.coords.latitude.toFixed(4)),
+                  longitude: Number(pos.coords.longitude.toFixed(4)),
+                  elevation: pos.coords.altitude ? Math.round(pos.coords.altitude) : 0,
+                },
+              });
+            },
+            () => {},
+            { timeout: 6000 },
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.locationMode, systemDetectedLocation, timeZone]);
+
+  const handleSelectCity = (city: CityLocation) => {
+    updateSettings({
+      locationMode: "automatic",
+      manualCoordinates: {
+        latitude: city.latitude,
+        longitude: city.longitude,
+        elevation: city.elevation ?? 0,
+      },
+      timeZoneMode: { kind: "explicit", identifier: city.timeZone },
+    });
+    setDetectedCityName(`${city.name}, ${city.country}`);
+  };
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const refresh = () => {
+      setNow(new Date());
+      timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    };
+    const refreshAfterVisibilityChange = () => {
+      setNow(new Date());
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    };
+    document.addEventListener("visibilitychange", refreshAfterVisibilityChange);
+    timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    return () => {
+      document.removeEventListener("visibilitychange", refreshAfterVisibilityChange);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [isWidget]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPersistedSettings().then((persisted) => {
+      if (cancelled) return;
+      if (persisted) setSettings(persisted);
+      setStoreReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    void saveSettings(settings, storeReady);
+  }, [settings, storeReady]);
+
+  useEffect(() => {
+    document.body.classList.toggle("widget-body", isWidget);
+    document.body.dir = textDirection(language);
+    document.documentElement.lang = language;
+    return () => document.body.classList.remove("widget-body");
+  }, [isWidget, language]);
+
+  const updateSettings = (patch: Partial<AppSettings>) => setSettings((current) => ({ ...current, ...patch }));
+
+  const playNotificationSound = async (sound: NotificationSound, playFullAdhan: boolean) => {
+    const url = soundUrl(sound, playFullAdhan);
+    if (!url) return;
+    audioRef.current?.pause();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setAudioPlaying(true);
+    audio.onended = () => setAudioPlaying(false);
+    audio.onerror = () => setAudioPlaying(false);
+    try {
+      await audio.play();
+    } catch {
+      setAudioPlaying(false);
+    }
+  };
+
+  const stopAudio = () => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setAudioPlaying(false);
+  };
+
+  const checkForAppUpdate = async (manual = false) => {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    if (manual) setUpdateStatus("Checking for updates...");
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        setUpdateStatus(manual ? "You already have the latest version." : undefined);
+        return;
+      }
+      const approved = window.confirm(`Version ${update.version} is available. Download and install it now?`);
+      if (!approved) {
+        setUpdateStatus(`Update ${update.version} is available.`);
+        return;
+      }
+      setUpdateStatus(`Downloading ${update.version}...`);
+      await update.downloadAndInstall();
+      setUpdateStatus(`Update ${update.version} installed. Restart the app if it does not relaunch automatically.`);
+    } catch {
+      setUpdateStatus(manual ? "Unable to check for updates right now." : undefined);
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const beginFocusMode = async (prayer: Prayer = clock.next?.prayer ?? "dhuhr") => {
+    setFocusPrayer(prayer);
+    await startNativeFocusMode();
+    setFocusPreview(true);
+  };
+
+  const endFocusMode = async () => {
+    setFocusPreview(false);
+    await endNativeFocusMode();
+  };
+
+
+  const clock = useMemo(
+    () => buildPrayerClock(now, settings, method, coordinates, timeZone),
+    [coordinates, method, now, settings, timeZone],
+  );
+
+  const runtimeSchedule = useMemo(
+    () => buildRuntimeSchedule(clock.today, clock.tomorrow, settings, timeZone, language),
+    [clock.today.date.getTime(), clock.tomorrow.date.getTime(), language, settings, timeZone],
+  );
+
+  const secondsUntilNext = clock.next ? Math.max(0, (clock.next.time.getTime() - now.getTime()) / 1000) : 0;
+  const activePrayer = settings.menuBarCountdownMode === "currentWaqt"
+    ? currentPrayer(clock.today, now)?.prayer ?? clock.next?.prayer
+    : clock.next?.prayer;
+  const currentPrayerTimeLabel = clock.next ? formatClock(clock.next.time, timeZone, language) : "--:--";
+  const trayLabel = buildTrayLabel(
+    language,
+    settings.menuBarStyle,
+    settings.menuBarCountdownMode,
+    activePrayer,
+    secondsUntilNext,
+    currentPrayerTimeLabel,
+    shortCountdown(secondsUntilNext),
+  );
+  const hijriDate = settings.showHijriDate ? formatHijriDateLocalized(now, settings.hijriDayAdjustment, timeZone, language) : undefined;
+  const rows = orderedTimes(clock.today);
+  const ishraqTime = settings.showIshraqTime ? ishraq(clock.today) : undefined;
+  const activeWaqt = currentPrayer(clock.today, now)?.prayer ?? clock.next?.prayer ?? "dhuhr";
+
+  useEffect(() => {
+    if (!storeReady || isWidget) return;
+    void setWidgetVisibility(settings.showPrayerWidget);
+  }, [isWidget, settings.showPrayerWidget, storeReady]);
+
+  useEffect(() => {
+    if (!storeReady || isWidget || !settings.autoUpdateEnabled) return;
+    const id = window.setTimeout(() => void checkForAppUpdate(false), 4_000);
+    return () => window.clearTimeout(id);
+  }, [isWidget, settings.autoUpdateEnabled, storeReady]);
+
+  useEffect(() => {
+    if (isWidget) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    const attach = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen<RuntimeScheduledEvent>("prayer-runtime-event", async (event) => {
+          const payload = event.payload;
+          if (payload.body) await sendDesktopNotification(payload.title, payload.body);
+          if (payload.playSound && payload.sound) await playNotificationSound(payload.sound, payload.playFullAdhan);
+          if (payload.startFocus && payload.prayer) await beginFocusMode(payload.prayer);
+        });
+        if (!cancelled) setNativeSchedulerAvailable(true);
+      } catch {
+        if (!cancelled) setNativeSchedulerAvailable(false);
+      }
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [isWidget]);
+
+  useEffect(() => {
+    if (isWidget || !storeReady || !nativeSchedulerAvailable) return;
+    let cancelled = false;
+    const pushSchedule = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("sync_runtime_schedule", { events: runtimeSchedule });
+      } catch {
+        if (!cancelled) setNativeSchedulerAvailable(false);
+      }
+    };
+    void pushSchedule();
+    return () => { cancelled = true; };
+  }, [isWidget, nativeSchedulerAvailable, runtimeSchedule, storeReady]);
+
+  useEffect(() => {
+    if (isWidget) return;
+    let cancelled = false;
+    const syncTray = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("update_tray_title", { title: trayLabel });
+      } catch {}
+    };
+    void syncTray();
+    return () => { cancelled = true; };
+  }, [isWidget, trayLabel]);
+
+  useEffect(() => {
+    if (isWidget || nativeSchedulerAvailable) return;
+    let timer: number | undefined;
+    let cancelled = false;
+
+    const checkAlerts = async () => {
+      const currentNow = new Date();
+      const currentClock = buildPrayerClock(currentNow, settings, method, coordinates, timeZone);
+      await fireDueAlerts({
+        now: currentNow,
+        today: currentClock.today,
+        tomorrow: currentClock.tomorrow,
+        settings,
+        timeZone,
+        fired: firedAlerts.current,
+        playSound: playNotificationSound,
+        showFocus: async (prayer) => {
+          if (shouldFocus(settings, prayer)) await beginFocusMode(prayer);
+        },
+      });
+      if (!cancelled) {
+        timer = window.setTimeout(
+          checkAlerts,
+          nextAlertCheckDelay(currentNow, currentClock.today, currentClock.tomorrow, settings, timeZone, firedAlerts.current),
+        );
+      }
+    };
+
+    void checkAlerts();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [coordinates, isWidget, method, nativeSchedulerAvailable, settings, timeZone]);
+
+  if (isWidget) {
+    return (
+      <PrayerWidget
+        next={clock.next}
+        secondsUntilNext={secondsUntilNext}
+        timeZone={timeZone}
+        hijriDate={hijriDate}
+        language={language}
+      />
+    );
+  }
+
+  // Circular gauge calculation for Next Prayer card
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius; // ~238.76
+  const prevWaqtTime = clock.today.times[activeWaqt]?.getTime() ?? (now.getTime() - 3600_000);
+  const nextWaqtTime = clock.next?.time.getTime() ?? (now.getTime() + 7200_000);
+  const totalWindow = Math.max(1, nextWaqtTime - prevWaqtTime);
+  const elapsedWindow = Math.max(0, Math.min(totalWindow, now.getTime() - prevWaqtTime));
+  const progressRatio = elapsedWindow / totalWindow;
+  const strokeDashoffset = circumference * (1 - progressRatio);
+
+  const totalSecsLeft = clock.next ? Math.max(0, Math.floor((clock.next.time.getTime() - now.getTime()) / 1000)) : 0;
+  const hoursLeft = Math.floor(totalSecsLeft / 3600);
+  const minsLeft = Math.floor((totalSecsLeft % 3600) / 60);
+  const countdownFormatted = `${String(hoursLeft).padStart(2, "0")}h ${String(minsLeft).padStart(2, "0")}m`;
+
+  const gregorianDateStr = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(now);
+
+  const displayNext = clock.next ?? { prayer: "fajr" as Prayer, time: now };
+  const isNextPrayed = completedPrayers[displayNext.prayer];
+
+  return (
+    <div className="salah-window-shell">
+      <div className="salah-app-body">
+      {/* Off-Canvas Backdrop (Click outside to close) */}
+      {sidebarOpen && (
+        <div
+          className="salah-drawer-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Off-Canvas Slide-Out Sidebar Drawer */}
+      <aside className={`salah-slide-drawer ${sidebarOpen ? "open" : ""}`} aria-label="Main Navigation">
+        <div className="drawer-header-top">
+          <div className="drawer-brand">
+            <IslamicRosetteLogo size={32} />
+            <div>
+              <h1 className="drawer-brand-name">Salah</h1>
+              <p className="drawer-brand-tagline">Better Prayers. A Brighter You.</p>
+            </div>
+          </div>
+          <button
+            className="drawer-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            title="Close menu"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <nav className="drawer-nav-list">
+          <button
+            className={`drawer-nav-item ${nav === "overview" ? "active" : ""}`}
+            onClick={() => {
+              setNav("overview");
+              setSidebarOpen(false);
+            }}
+          >
+            <Home size={19} />
+            <span>Overview</span>
+          </button>
+
+          <button
+            className={`drawer-nav-item ${nav === "prayerTimes" ? "active" : ""}`}
+            onClick={() => {
+              setNav("prayerTimes");
+              setSidebarOpen(false);
+            }}
+          >
+            <Clock size={19} />
+            <span>Prayer Times</span>
+          </button>
+
+          <button
+            className={`drawer-nav-item ${nav === "accountability" ? "active" : ""}`}
+            onClick={() => {
+              setNav("accountability");
+              setSidebarOpen(false);
+            }}
+          >
+            <Target size={19} />
+            <span>Salah Accountability</span>
+          </button>
+
+          <button
+            className={`drawer-nav-item ${nav === "history" ? "active" : ""}`}
+            onClick={() => {
+              setNav("history");
+              setSidebarOpen(false);
+            }}
+          >
+            <Calendar size={19} />
+            <span>Prayer History & Streak</span>
+          </button>
+
+          <button
+            className={`drawer-nav-item ${nav === "settings" ? "active" : ""}`}
+            onClick={() => {
+              setNav("settings");
+              setSidebarOpen(false);
+            }}
+          >
+            <SettingsIcon size={19} />
+            <span>Settings & Preferences</span>
+          </button>
+        </nav>
+
+        <div className="drawer-divider" />
+
+        <div className="drawer-quick-actions">
+          <button
+            className="drawer-action-btn"
+            onClick={() => {
+              beginFocusMode(clock.next?.prayer);
+              setSidebarOpen(false);
+            }}
+          >
+            <EyeOff size={16} />
+            <span>Start Focus Mode</span>
+          </button>
+
+          <button
+            className={`drawer-action-btn ${settings.showPrayerWidget ? "highlight" : ""}`}
+            onClick={() => {
+              const nextVal = !settings.showPrayerWidget;
+              updateSettings({ showPrayerWidget: nextVal });
+              void setWidgetVisibility(nextVal);
+            }}
+          >
+            <Moon size={16} />
+            <span>Desktop Widget: {settings.showPrayerWidget ? "Active" : "Hidden"}</span>
+          </button>
+        </div>
+
+        <div className="drawer-footer-user">
+          <div className="drawer-user-info">
+            <div className="drawer-user-avatar">
+              <span>N</span>
+              <div className="drawer-avatar-dot" />
+            </div>
+            <div>
+              <strong className="drawer-user-name">Nayem</strong>
+              <p className="drawer-user-streak">{streakDays.filter(Boolean).length} of 7 Days Streak</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+        {/* Main Canvas */}
+        <main className="salah-main-canvas">
+          {nav === "overview" && (
+            <>
+              {/* Header Greeting */}
+              <header className="salah-header">
+                <div className="header-greeting-left">
+                  <button
+                    className="salah-menu-trigger-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open navigation menu"
+                  >
+                    <Menu size={18} />
+                    <span>Menu</span>
+                  </button>
+                  <div className="header-greeting-text">
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <h2 className="header-greeting-title">Assalamu Alaikum, Nayem</h2>
+                      <span className="header-location-badge" title={`Active: ${detectedCityName} (${coordinates.latitude.toFixed(2)}°, ${coordinates.longitude.toFixed(2)}°)`}>
+                        <MapPin size={11} />
+                        <span>{detectedCityName.split(",")[0]}</span>
+                      </span>
+                    </div>
+                    <p className="header-greeting-sub">Make space for what matters.</p>
+                  </div>
+                </div>
+
+                <div className="header-meta-group">
+                  <div className="header-date-stack">
+                    <span className="header-gregorian-date">{gregorianDateStr}</span>
+                    <span className="header-hijri-date">{hijriDate ?? "Dhu al-Hijjah 10, 1447 AH"}</span>
+                  </div>
+
+                  <div className="header-meta-divider" />
+
+                  <div className="header-progress-stack">
+                    <div className="header-progress-top">
+                      <Clock size={14} />
+                      <span>Daily Progress</span>
+                    </div>
+                    <span className="header-progress-count">{completedCount} of 5 prayers</span>
+                    <div className="header-progress-bar-track">
+                      <div
+                        className="header-progress-bar-fill"
+                        style={{ width: `${(completedCount / 5) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </header>
+
+              {/* International Adaptive Bento Grid */}
+              <div className="salah-bento-grid">
+                {/* Column 1: Core Daily Prayer Hub */}
+                <div className="bento-column-primary">
+                  {/* Card 1: Next Prayer Hero */}
+                  <div className="salah-card card-next-prayer">
+                    <div className="card-top-eyebrow-row">
+                      <span className="card-eyebrow">NEXT PRAYER</span>
+                      <span className={`status-pill ${activeWaqt === displayNext.prayer ? "current" : "upcoming"}`}>
+                        {activeWaqt === displayNext.prayer ? "Current" : "Upcoming"}
+                      </span>
+                    </div>
+
+                    <div className="next-prayer-content">
+                      <div className="next-prayer-info">
+                        <strong className="next-prayer-name">{prayerNames[displayNext.prayer]}</strong>
+                        <div className="next-prayer-time-line">
+                          <Sunrise size={17} />
+                          <span>{formatClock(displayNext.time, timeZone, language)}</span>
+                        </div>
+                      </div>
+
+                      {/* Donut Gauge Ring */}
+                      <div className="donut-gauge-container">
+                        <svg className="donut-gauge-svg" viewBox="0 0 96 96">
+                          <circle
+                            cx="48"
+                            cy="48"
+                            r={radius}
+                            stroke="#E6EFEA"
+                            strokeWidth="7"
+                            fill="none"
+                          />
+                          <circle
+                            cx="48"
+                            cy="48"
+                            r={radius}
+                            stroke="#1E5144"
+                            strokeWidth="7"
+                            fill="none"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={strokeDashoffset}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <div className="donut-gauge-labels">
+                          <span className="donut-gauge-time">{countdownFormatted}</span>
+                          <span className="donut-gauge-sub">until {prayerNames[displayNext.prayer]}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      className={`btn-card-prayed ${isNextPrayed ? "done" : "pending"}`}
+                      onClick={() => togglePrayer(displayNext.prayer)}
+                    >
+                      {isNextPrayed && <Check size={15} strokeWidth={2.5} />}
+                      <span>{isNextPrayed ? "Prayed" : "I've Prayed"}</span>
+                    </button>
+                  </div>
+
+                  {/* Card 2: Five Daily Prayers */}
+                  <div className="salah-card card-five-prayers">
+                    <div className="card-header-bar">
+                      <div className="card-header-title">
+                        <Calendar size={16} />
+                        <span>Five Daily Prayers</span>
+                      </div>
+                      <button className="card-view-all-link" onClick={() => setNav("prayerTimes")}>
+                        <span>View All</span>
+                        <ChevronRight size={13} />
+                      </button>
+                    </div>
+
+                    <div className="prayers-list-container">
+                      {obligatoryPrayers.map((prayer) => {
+                        const Icon = prayerIcons[prayer];
+                        const pTime = clock.today.times[prayer] ?? now;
+                        const isDone = completedPrayers[prayer];
+                        const isCurrent = activeWaqt === prayer;
+
+                        let badgeText = "Upcoming";
+                        let badgeClass = "upcoming";
+                        if (isDone) {
+                          badgeText = "Completed";
+                          badgeClass = "completed";
+                        } else if (isCurrent) {
+                          badgeText = "Current";
+                          badgeClass = "current";
+                        }
+
+                        return (
+                          <div key={prayer} className={`prayer-list-item ${isCurrent ? "item-current" : ""}`}>
+                            <div className="prayer-item-left">
+                              <div className="prayer-item-icon">
+                                <Icon size={16} />
+                              </div>
+                              <span className="prayer-item-name">{prayerNames[prayer]}</span>
+                            </div>
+
+                            <div className="prayer-item-cluster">
+                              <span className="prayer-item-time">{formatClock(pTime, timeZone, language)}</span>
+                              <span className={`status-pill ${badgeClass}`}>{badgeText}</span>
+                              <div
+                                className={`prayer-check-btn ${isDone ? "completed" : isCurrent ? "current" : "upcoming"}`}
+                                onClick={() => togglePrayer(prayer)}
+                                title={isDone ? "Mark as uncompleted" : "Mark as completed"}
+                              >
+                                {isDone && <Check size={11} strokeWidth={3} />}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Card 3: Today's Salah */}
+                  <div className="salah-card card-today-salah">
+                    <div className="card-header-bar">
+                      <div className="card-header-title">
+                        <Target size={16} />
+                        <span>Today's Salah</span>
+                      </div>
+                      <span className="today-salah-header-pill">{completedCount} of 5 completed</span>
+                    </div>
+
+                    <div className="today-salah-track">
+                      <div
+                        className="today-salah-fill"
+                        style={{ width: `${(completedCount / 5) * 100}%` }}
+                      />
+                    </div>
+
+                    {/* 5 Milestone Checkpoint Circles */}
+                    <div className="milestones-row">
+                      {obligatoryPrayers.map((prayer) => {
+                        const isDone = completedPrayers[prayer];
+                        const isCurrent = activeWaqt === prayer;
+                        return (
+                          <div
+                            key={prayer}
+                            className="milestone-node"
+                            onClick={() => togglePrayer(prayer)}
+                          >
+                            <div className={`milestone-circle ${isDone ? "completed" : isCurrent ? "current" : "upcoming"}`}>
+                              {isDone && <Check size={12} strokeWidth={3} />}
+                            </div>
+                            <span className="milestone-label">{prayerNames[prayer]}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Consistency (Last 7 days) */}
+                    <div className="consistency-bar">
+                      <div className="consistency-left">
+                        <Calendar size={15} />
+                        <div>
+                          <div className="consistency-title">Consistency</div>
+                          <div className="consistency-sub">Last 7 days</div>
+                        </div>
+                      </div>
+
+                      <div className="streak-dots-group">
+                        {streakDays.map((active, idx) => (
+                          <div
+                            key={idx}
+                            className={`streak-indicator-dot ${active ? "active" : ""}`}
+                            title={`Day ${idx + 1}: ${active ? "Consistent" : "Pending"}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: Companion & Focus Experience */}
+                <div className="bento-column-secondary">
+                  {/* Card 4: Salah Reminder Prompt */}
+                  {!reminderDismissed ? (
+                    <div className="salah-card card-reminder-prompt">
+                      <div className="reminder-card-top">
+                        <div className="card-header-title">
+                          <Bell size={15} />
+                          <span>Salah Reminder</span>
+                        </div>
+                        <button
+                          className="reminder-dismiss-btn"
+                          onClick={() => setReminderDismissed(true)}
+                          title="Dismiss"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      <div className="reminder-card-body">
+                        <MosqueDomeIllustration size={76} />
+                        <div className="reminder-text-stack">
+                          <h3 className="reminder-callout-title">It's time for {prayerNames[activeWaqt]}.</h3>
+                          <p className="reminder-callout-sub">Take a pause and pray.</p>
+                        </div>
+                      </div>
+
+                      <div className="reminder-actions-row">
+                        <button
+                          className="btn-reminder-prayed"
+                          onClick={() => {
+                            markPrayerCompleted(activeWaqt);
+                            setReminderDismissed(true);
+                          }}
+                        >
+                          I've Prayed
+                        </button>
+                        <button
+                          className="btn-reminder-again"
+                          onClick={() => setReminderDismissed(true)}
+                        >
+                          Remind Me Again
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="salah-card reminder-settled-card">
+                      <div className="reminder-settled-content">
+                        <div className="reminder-settled-icon">
+                          <Check size={20} strokeWidth={2.5} />
+                        </div>
+                        <strong className="reminder-settled-title">Reminder Settled</strong>
+                        <p className="reminder-settled-sub">Next gentle alert will trigger at the upcoming prayer window.</p>
+                        <button
+                          className="reminder-reopen-btn"
+                          onClick={() => setReminderDismissed(false)}
+                        >
+                          Show prompt again
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card 5: Focus Mode */}
+                  <div className="salah-card card-focus-mode">
+                    <div className="focus-card-top">
+                      <div className="card-header-title">
+                        <Bell size={16} />
+                        <span>Focus Mode</span>
+                      </div>
+                      <div
+                        className={`salah-toggle-switch ${settings.focusModeEnabled ? "active" : ""}`}
+                        onClick={() => updateSettings({ focusModeEnabled: !settings.focusModeEnabled })}
+                      >
+                        <div className="salah-toggle-thumb" />
+                      </div>
+                    </div>
+
+                    <p className="focus-card-desc">
+                      Gentle reminders until you confirm. A focused {focusDurationMinutes}-minute prayer break when needed.
+                    </p>
+
+                    <div className="focus-select-grid">
+                      <div className="focus-select-col">
+                        <label className="focus-field-label">
+                          <Clock size={13} />
+                          <span>Reminder Interval</span>
+                        </label>
+                        <select
+                          className="focus-field-select"
+                          value={focusIntervalMinutes}
+                          onChange={(e) => setFocusIntervalMinutes(Number(e.target.value))}
+                        >
+                          <option value={5}>Every 5 minutes</option>
+                          <option value={10}>Every 10 minutes</option>
+                          <option value={15}>Every 15 minutes</option>
+                        </select>
+                      </div>
+
+                      <div className="focus-select-col">
+                        <label className="focus-field-label">
+                          <Clock size={13} />
+                          <span>Focus Duration</span>
+                        </label>
+                        <select
+                          className="focus-field-select"
+                          value={focusDurationMinutes}
+                          onChange={(e) => setFocusDurationMinutes(Number(e.target.value))}
+                        >
+                          <option value={10}>10 minutes</option>
+                          <option value={15}>15 minutes</option>
+                          <option value={20}>20 minutes</option>
+                          <option value={30}>30 minutes</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="focus-footer-info">
+                      <Info size={13} />
+                      <span>Every {focusIntervalMinutes} minutes • Emergency recovery available</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* VIEW: PRAYER TIMES */}
+          {nav === "prayerTimes" && (
+            <div className="view-container">
+              <div className="view-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <button
+                    className="salah-menu-trigger-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open navigation menu"
+                  >
+                    <Menu size={18} />
+                    <span>Menu</span>
+                  </button>
+                  <div>
+                    <h2 className="view-title">Prayer Times Schedule</h2>
+                    <p className="view-subtitle">Accurate astronomical timings based on your coordinates.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="view-card-grid">
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 16 }}>
+                    <Calendar size={16} />
+                    <span>Today's Complete Schedule</span>
+                  </div>
+                  <table className="prayer-table">
+                    <thead>
+                      <tr>
+                        <th>Prayer</th>
+                        <th>Period</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((entry) => {
+                        const isCurrent = activeWaqt === entry.prayer;
+                        const isNext = clock.next?.prayer === entry.prayer;
+                        const isDone = completedPrayers[entry.prayer];
+                        return (
+                          <tr key={entry.prayer} className={isCurrent ? "active" : ""}>
+                            <td style={{ fontWeight: 600 }}>{prayerNames[entry.prayer]}</td>
+                            <td style={{ color: "#6B7280" }}>{periodNames[entry.prayer].en}</td>
+                            <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                              {formatClock(entry.time, timeZone, language)}
+                            </td>
+                            <td>
+                              <span className={`status-pill ${isDone ? "completed" : isCurrent ? "current" : "upcoming"}`}>
+                                {isDone ? "Completed" : isCurrent ? "Current" : isNext ? "Next" : "Upcoming"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {settings.showIshraqTime && ishraqTime && (
+                        <tr>
+                          <td style={{ fontWeight: 600 }}>Ishraq</td>
+                          <td style={{ color: "#6B7280" }}>Post-Sunrise</td>
+                          <td style={{ fontWeight: 600 }}>{formatClock(ishraqTime, timeZone, language)}</td>
+                          <td><span className="status-pill upcoming">Sunnah</span></td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 16 }}>
+                    <Clock size={16} />
+                    <span>Tomorrow's Schedule</span>
+                  </div>
+                  <table className="prayer-table">
+                    <thead>
+                      <tr>
+                        <th>Prayer</th>
+                        <th>Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderedTimes(clock.tomorrow).map((entry) => (
+                        <tr key={entry.prayer}>
+                          <td style={{ fontWeight: 600 }}>{prayerNames[entry.prayer]}</td>
+                          <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                            {formatClock(entry.time, timeZone, language)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #E8ECE9", display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#6B7280" }}>
+                    <div><strong>Calculation:</strong> {method.displayName}</div>
+                    <div><strong>Coordinates:</strong> {coordinates.latitude.toFixed(4)}°, {coordinates.longitude.toFixed(4)}°</div>
+                    <div><strong>Time Zone:</strong> {timeZone}</div>
+                  </div>
+                </div>
+
+                <div className="salah-card view-full-card">
+                  <div className="card-header-title" style={{ marginBottom: 12 }}>
+                    <Sparkles size={16} />
+                    <span>Quick Actions</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      className="setting-btn"
+                      onClick={() => beginFocusMode(clock.next?.prayer)}
+                    >
+                      <EyeOff size={15} />
+                      <span>Start Focus Mode Now</span>
+                    </button>
+                    <button
+                      className="setting-btn"
+                      onClick={() => {
+                        const nextVal = !settings.showPrayerWidget;
+                        updateSettings({ showPrayerWidget: nextVal });
+                        void setWidgetVisibility(nextVal);
+                      }}
+                    >
+                      <Moon size={15} />
+                      <span>{settings.showPrayerWidget ? "Hide Desktop Widget" : "Show Desktop Widget"}</span>
+                    </button>
+                    {audioPlaying && (
+                      <button className="setting-btn" style={{ background: "#FEE2E2", color: "#DC2626" }} onClick={stopAudio}>
+                        <Volume2 size={15} />
+                        <span>Stop Playing Adhan</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: SALAH ACCOUNTABILITY */}
+          {nav === "accountability" && (
+            <div className="view-container">
+              <div className="view-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <button
+                    className="salah-menu-trigger-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open navigation menu"
+                  >
+                    <Menu size={18} />
+                    <span>Menu</span>
+                  </button>
+                  <div>
+                    <h2 className="view-title">Salah Accountability</h2>
+                    <p className="view-subtitle">Build consistent prayer habits and track your spiritual growth.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="view-card-grid">
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 16 }}>
+                    <Target size={16} />
+                    <span>Today's Checklist</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {obligatoryPrayers.map((prayer) => {
+                      const isDone = completedPrayers[prayer];
+                      return (
+                        <div
+                          key={prayer}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "12px 14px",
+                            borderRadius: 10,
+                            background: isDone ? "#E8F3EE" : "#F8FAF9",
+                            border: "1px solid #E8ECE9",
+                            cursor: "pointer",
+                          }}
+                          onClick={() => togglePrayer(prayer)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div className={`prayer-check-btn ${isDone ? "completed" : "upcoming"}`}>
+                              {isDone && <Check size={12} strokeWidth={3} />}
+                            </div>
+                            <div>
+                              <strong style={{ fontSize: 14, color: "#111827" }}>{prayerNames[prayer]} Prayer</strong>
+                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280" }}>
+                                {isDone ? "Marked as prayed on time" : "Pending obligation"}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`status-pill ${isDone ? "completed" : "upcoming"}`}>
+                            {isDone ? "Prayed" : "Pending"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 16 }}>
+                    <Calendar size={16} />
+                    <span>Weekly Habit Stats</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 13 }}>
+                        <strong>Overall Consistency Rate</strong>
+                        <span style={{ color: "#1E5144", fontWeight: 700 }}>
+                          {Math.round((streakDays.filter(Boolean).length / 7) * 100)}%
+                        </span>
+                      </div>
+                      <div className="today-salah-track">
+                        <div
+                          className="today-salah-fill"
+                          style={{ width: `${(streakDays.filter(Boolean).length / 7) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAF9", borderRadius: 12, padding: 16, border: "1px solid #E8ECE9" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#111827" }}>
+                        Hadith of Reflection
+                      </div>
+                      <blockquote style={{ fontSize: 12.5, color: "#4B5563", lineHeight: 1.5, margin: 0 }}>
+                        "The most beloved of deeds to Allah are those that are most consistent, even if they are small."
+                      </blockquote>
+                      <span style={{ display: "block", marginTop: 6, fontSize: 11, color: "#85928C" }}>— Sahih al-Bukhari</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: PRAYER HISTORY */}
+          {nav === "history" && (
+            <div className="view-container">
+              <div className="view-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <button
+                    className="salah-menu-trigger-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open navigation menu"
+                  >
+                    <Menu size={18} />
+                    <span>Menu</span>
+                  </button>
+                  <div>
+                    <h2 className="view-title">Prayer History & Streak</h2>
+                    <p className="view-subtitle">Review your consistency over the last week and month.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="salah-card">
+                <div className="card-header-title" style={{ marginBottom: 16 }}>
+                  <Calendar size={16} />
+                  <span>Last 7 Days Prayer Journal</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12, textAlign: "center" }}>
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayName, idx) => {
+                    const active = streakDays[idx % streakDays.length];
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: active ? "#E8F3EE" : "#F8FAF9",
+                          border: "1px solid #E8ECE9",
+                          borderRadius: 12,
+                          padding: "16px 8px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>{dayName}</span>
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: "50%",
+                            background: active ? "#1E5144" : "#E5E7EB",
+                            color: "#FFFFFF",
+                            display: "grid",
+                            placeItems: "center",
+                          }}
+                        >
+                          {active ? <Check size={16} strokeWidth={2.5} /> : <Minus size={16} />}
+                        </div>
+                        <span style={{ fontSize: 11, color: active ? "#1E5144" : "#9CA3AF", fontWeight: 600 }}>
+                          {active ? "Complete" : "Pending"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: SETTINGS */}
+          {nav === "settings" && (
+            <div className="settings-view-wrapper">
+              <div className="view-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <button
+                    className="salah-menu-trigger-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open navigation menu"
+                  >
+                    <Menu size={18} />
+                    <span>Menu</span>
+                  </button>
+                  <div>
+                    <h2 className="view-title">Settings & Preferences</h2>
+                    <p className="view-subtitle">Customize prayer calculation methods, notifications, and desktop behavior.</p>
+                  </div>
+                </div>
+              </div>
+
+              <nav className="settings-tabbar">
+                <button
+                  className={`settings-tab-btn ${settingsTab === "general" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("general")}
+                >
+                  <SettingsIcon size={15} />
+                  <span>General</span>
+                </button>
+                <button
+                  className={`settings-tab-btn ${settingsTab === "location" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("location")}
+                >
+                  <LocateFixed size={15} />
+                  <span>Location & Time</span>
+                </button>
+                <button
+                  className={`settings-tab-btn ${settingsTab === "calculation" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("calculation")}
+                >
+                  <Moon size={15} />
+                  <span>Calculation</span>
+                </button>
+                <button
+                  className={`settings-tab-btn ${settingsTab === "notifications" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("notifications")}
+                >
+                  <Bell size={15} />
+                  <span>Notifications</span>
+                </button>
+                <button
+                  className={`settings-tab-btn ${settingsTab === "focus" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("focus")}
+                >
+                  <EyeOff size={15} />
+                  <span>Focus Mode</span>
+                </button>
+              </nav>
+
+              <div className="settings-body-card">
+                {settingsTab === "general" && (
+                  <GeneralTab
+                    settings={settings}
+                    update={updateSettings}
+                    language={language}
+                    onCheckUpdates={() => void checkForAppUpdate(true)}
+                    updateBusy={updateBusy}
+                    updateStatus={updateStatus}
+                  />
+                )}
+                {settingsTab === "location" && (
+                  <LocationTab
+                    settings={settings}
+                    update={updateSettings}
+                    coordinates={coordinates}
+                    timeZone={timeZone}
+                    language={language}
+                    detectedCountryCode={detectedCountryCode}
+                    detectedCityName={detectedCityName}
+                    onSelectCity={handleSelectCity}
+                  />
+                )}
+                {settingsTab === "calculation" && (
+                  <CalculationTab
+                    settings={settings}
+                    update={updateSettings}
+                    language={language}
+                    detectedCountryCode={detectedCountryCode}
+                    resolvedMethodId={resolvedMethodId}
+                  />
+                )}
+                {settingsTab === "notifications" && (
+                  <NotificationsTab
+                    settings={settings}
+                    update={updateSettings}
+                    language={language}
+                  />
+                )}
+                {settingsTab === "focus" && (
+                  <FocusTab
+                    settings={settings}
+                    update={updateSettings}
+                    language={language}
+                    onPreview={() => beginFocusMode(clock.next?.prayer)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {!settings.didCompleteOnboarding && <Onboarding settings={settings} update={updateSettings} language={language} />}
+      {focusPreview && <FocusPreview settings={settings} prayer={focusPrayer} onDone={endFocusMode} language={language} />}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   DESKTOP FLOATING WIDGET
+   ========================================================================== */
+
+function PrayerWidget({
+  next,
+  secondsUntilNext,
+  timeZone,
+  hijriDate,
+  language,
+}: {
+  next?: { prayer: Prayer; time: Date };
+  secondsUntilNext: number;
+  timeZone: string;
+  hijriDate?: string;
+  language: SupportedLanguage;
+}) {
+  const prayer = next?.prayer ?? "dhuhr";
+  const Icon = prayerIcons[prayer];
+  const startDrag = () => void startWidgetDrag();
+  return (
+    <main className="prayer-widget" onPointerDown={startDrag}>
+      <div className="widget-grip"><GripHorizontal size={15} /></div>
+      <button className="widget-close" onPointerDown={(event) => event.stopPropagation()} onClick={() => setWidgetVisibility(false)} title={t(language, "desktopWidget")}><X size={14} /></button>
+      <section>
+        <div className="widget-icon"><Icon size={22} /></div>
+        <div className="widget-copy">
+          <span>{t(language, "nextPrayer")}</span>
+          <strong>{prayerLabel(language, prayer)}</strong>
+        </div>
+      </section>
+      <aside>
+        <strong>{next ? formatClock(next.time, timeZone, language) : "--:--"}</strong>
+        <span>{next ? longCountdown(secondsUntilNext) : t(language, "waiting")}</span>
+        {hijriDate && <em>{hijriDate}</em>}
+      </aside>
+    </main>
+  );
+}
+
+/* ==========================================================================
+   SETTINGS TABS & HELPER COMPONENTS
+   ========================================================================== */
+
+interface SettingsTabProps {
+  settings: AppSettings;
+  update: (patch: Partial<AppSettings>) => void;
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="setting-section">
+      <h4 className="setting-section-title">{title}</h4>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+    </div>
+  );
+}
+
+function SettingRow({ label, subLabel, control }: { label: string; subLabel?: string; control: React.ReactNode }) {
+  return (
+    <div className="setting-row">
+      <div className="setting-row-label-group">
+        <span className="setting-label">{label}</span>
+        {subLabel && <span className="setting-sublabel">{subLabel}</span>}
+      </div>
+      <div>{control}</div>
+    </div>
+  );
+}
+
+function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <div className={`salah-toggle-switch ${on ? "active" : ""}`} onClick={onClick}>
+      <div className="salah-toggle-thumb" />
+    </div>
+  );
+}
+
+function NativeSelect<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (val: T) => void;
+  options: Array<[T, string]>;
+}) {
+  return (
+    <select className="setting-select" value={value} onChange={(e) => onChange(e.target.value as T)}>
+      {options.map(([k, label]) => (
+        <option key={k} value={k}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function NumberInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
+  return (
+    <input
+      type="number"
+      className="setting-input"
+      style={{ width: 80 }}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+    />
+  );
+}
+
+function GeneralTab({
+  settings,
+  update,
+  language,
+  onCheckUpdates,
+  updateBusy,
+  updateStatus,
+}: SettingsTabProps & { language: SupportedLanguage; onCheckUpdates: () => void; updateBusy: boolean; updateStatus?: string }) {
+  const toggleLaunchAtLogin = async () => {
+    const next = !settings.launchAtLogin;
+    update({ launchAtLogin: next });
+    await setLaunchAtLogin(next);
+  };
+  const togglePrayerWidget = async () => {
+    const next = !settings.showPrayerWidget;
+    update({ showPrayerWidget: next });
+    await setWidgetVisibility(next);
+  };
+
+  return (
+    <>
+      <Section title="Startup & Widget">
+        <SettingRow label="Launch at startup" control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} />
+        <SettingRow label="Show floating desktop widget" control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
+      </Section>
+      <Section title="Tray & Taskbar">
+        <SettingRow
+          label="Taskbar label style"
+          control={
+            <NativeSelect
+              value={settings.menuBarStyle}
+              onChange={(menuBarStyle) => update({ menuBarStyle })}
+              options={[
+                ["iconOnly", "Icon only"],
+                ["countdownOnly", "Countdown only"],
+                ["iconCountdown", "Icon + Countdown"],
+                ["nextPrayerCountdown", "Next prayer + Countdown"],
+                ["iconNameCountdown", "Icon + Name + Countdown"],
+                ["nextPrayerClock", "Next prayer clock"],
+                ["iconNameClock", "Icon + Name + Clock"],
+              ]}
+            />
+          }
+        />
+        <SettingRow
+          label="Countdown shows"
+          control={
+            <NativeSelect
+              value={settings.menuBarCountdownMode}
+              onChange={(menuBarCountdownMode) => update({ menuBarCountdownMode })}
+              options={[
+                ["nextPrayer", "Time until next prayer"],
+                ["currentWaqt", "Time remaining in current waqt"],
+              ]}
+            />
+          }
+        />
+      </Section>
+      <Section title="Display Preferences">
+        <SettingRow label="Show Ishraq time" control={<Switch on={settings.showIshraqTime} onClick={() => update({ showIshraqTime: !settings.showIshraqTime })} />} />
+        <SettingRow label="Show Hijri date" control={<Switch on={settings.showHijriDate} onClick={() => update({ showHijriDate: !settings.showHijriDate })} />} />
+        <SettingRow label="Hijri day adjustment" subLabel="Adjust if sighting differs in your region" control={<NumberInput value={settings.hijriDayAdjustment} onChange={(hijriDayAdjustment) => update({ hijriDayAdjustment })} />} />
+        <SettingRow
+          label="Interface Language"
+          control={
+            <NativeSelect
+              value={settings.languageOverride ?? "system"}
+              onChange={(code) => update({ languageOverride: code === "system" ? undefined : code })}
+              options={[
+                ["system", "Follow System"],
+                ["en", "English"],
+                ["bn", "Bengali (বাংলা)"],
+                ["ar", "Arabic (العربية)"],
+                ["tr", "Turkish (Türkçe)"],
+              ]}
+            />
+          }
+        />
+      </Section>
+      <Section title="Application Updates">
+        <SettingRow label="Check for updates automatically" subLabel={updateStatus} control={<Switch on={settings.autoUpdateEnabled} onClick={() => update({ autoUpdateEnabled: !settings.autoUpdateEnabled })} />} />
+        <SettingRow
+          label="Check for updates now"
+          control={
+            <button className="setting-btn" onClick={onCheckUpdates} disabled={updateBusy}>
+              {updateBusy ? "Checking..." : "Check for updates"}
+            </button>
+          }
+        />
+      </Section>
+    </>
+  );
+}
+
+function LocationTab({
+  settings,
+  update,
+  coordinates,
+  timeZone,
+  language,
+  detectedCountryCode,
+  detectedCityName,
+  onSelectCity,
+}: SettingsTabProps & {
+  coordinates: Coordinates;
+  timeZone: string;
+  language: SupportedLanguage;
+  detectedCountryCode?: string;
+  detectedCityName: string;
+  onSelectCity: (city: CityLocation) => void;
+}) {
+  const [detecting, setDetecting] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<string | null>(null);
+
+  const setCoordinate = (key: "latitude" | "longitude" | "elevation", value: number) => {
+    update({
+      locationMode: "manual",
+      manualCoordinates: { ...settings.manualCoordinates, [key]: value },
+    });
+  };
+
+  const detectLocation = async () => {
+    setLocationStatus("Detecting location...");
+    setDetecting(true);
+
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      const data = await res.json();
+      if (data && typeof data.latitude === "number" && typeof data.longitude === "number") {
+        update({
+          locationMode: "automatic",
+          manualCoordinates: {
+            latitude: Number(data.latitude.toFixed(6)),
+            longitude: Number(data.longitude.toFixed(6)),
+            elevation: 0,
+          },
+          timeZoneMode: data.timezone ? { kind: "explicit", identifier: data.timezone } : settings.timeZoneMode,
+        });
+        setLocationStatus(`Detected: ${data.city || data.region}, ${data.country_name || data.country}`);
+        setDetecting(false);
+        return;
+      }
+    } catch {}
+
+    if (!navigator.geolocation) {
+      setLocationStatus("Geolocation unavailable on this device.");
+      setDetecting(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        update({
+          locationMode: "automatic",
+          manualCoordinates: {
+            latitude: Number(position.coords.latitude.toFixed(6)),
+            longitude: Number(position.coords.longitude.toFixed(6)),
+            elevation: position.coords.altitude ? Math.round(position.coords.altitude) : settings.manualCoordinates.elevation,
+          },
+        });
+        setLocationStatus("GPS coordinates updated successfully.");
+        setDetecting(false);
+      },
+      (error) => {
+        setLocationStatus(error.message || "Could not detect location.");
+        setDetecting(false);
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 10 * 60_000 },
+    );
+  };
+
+  const selectedCityId = popularCities.find(
+    (c) => Math.abs(c.latitude - coordinates.latitude) < 0.08 && Math.abs(c.longitude - coordinates.longitude) < 0.08,
+  )?.id ?? "";
+
+  return (
+    <>
+      <div style={{
+        background: "#E8F3EE",
+        border: "1px solid #C8DDD3",
+        borderRadius: 12,
+        padding: "16px 18px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 16,
+        gap: 12,
+        flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#1E5144", color: "#FFFFFF", display: "grid", placeItems: "center", flexShrink: 0 }}>
+            <MapPin size={20} />
+          </div>
+          <div>
+            <strong style={{ fontSize: 15, color: "#111827" }}>{detectedCityName}</strong>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#4B5563" }}>
+              {coordinates.latitude.toFixed(4)}° N, {coordinates.longitude.toFixed(4)}° E • {settings.locationMode === "automatic" ? "Auto Location Active" : "Custom Coordinates"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          className="setting-btn"
+          onClick={detectLocation}
+          disabled={detecting}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          <LocateFixed size={14} />
+          <span>{detecting ? "Detecting..." : "Detect Location"}</span>
+        </button>
+      </div>
+
+      {locationStatus && (
+        <div style={{ fontSize: 12, color: "#1E5144", background: "#F0FDF4", padding: "8px 12px", borderRadius: 8, marginBottom: 14 }}>
+          {locationStatus}
+        </div>
+      )}
+
+      <Section title="Quick City Selector">
+        <SettingRow
+          label="Preset City"
+          subLabel="Select your city to automatically apply exact coordinates, timezone, and local calculation method"
+          control={
+            <select
+              className="setting-select"
+              value={selectedCityId}
+              onChange={(e) => {
+                const city = popularCities.find((c) => c.id === e.target.value);
+                if (city) onSelectCity(city);
+              }}
+            >
+              <option value="">-- Choose City --</option>
+              <optgroup label="Bangladesh">
+                {popularCities.filter((c) => c.countryCode === "BD").map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Middle East & Holy Sites">
+                {popularCities.filter((c) => ["SA", "AE", "QA", "KW", "OM", "EG", "TR"].includes(c.countryCode)).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+                ))}
+              </optgroup>
+              <optgroup label="South & Southeast Asia">
+                {popularCities.filter((c) => ["PK", "IN", "MY", "ID", "SG"].includes(c.countryCode)).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+                ))}
+              </optgroup>
+              <optgroup label="United Kingdom, Europe, Americas, Australia">
+                {popularCities.filter((c) => ["GB", "US", "CA", "FR", "DE", "AU"].includes(c.countryCode)).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+                ))}
+              </optgroup>
+            </select>
+          }
+        />
+      </Section>
+
+      <Section title="Geographic Coordinates">
+        <SettingRow
+          label="Latitude"
+          control={
+            <input
+              type="number"
+              step="0.0001"
+              className="setting-input"
+              value={coordinates.latitude}
+              onChange={(e) => setCoordinate("latitude", Number(e.target.value))}
+            />
+          }
+        />
+        <SettingRow
+          label="Longitude"
+          control={
+            <input
+              type="number"
+              step="0.0001"
+              className="setting-input"
+              value={coordinates.longitude}
+              onChange={(e) => setCoordinate("longitude", Number(e.target.value))}
+            />
+          }
+        />
+      </Section>
+
+      <Section title="Time Zone">
+        <SettingRow
+          label="Active Time Zone"
+          subLabel={timeZone}
+          control={
+            <NativeSelect
+              value={settings.timeZoneMode.kind}
+              onChange={(kind) => update({ timeZoneMode: kind === "system" ? { kind: "system" } : { kind: "explicit", identifier: timeZone } })}
+              options={[
+                ["system", "Follow System Timezone"],
+                ["explicit", "Explicit Timezone"],
+              ]}
+            />
+          }
+        />
+      </Section>
+    </>
+  );
+}
+
+function CalculationTab({
+  settings,
+  update,
+  language,
+  detectedCountryCode,
+  resolvedMethodId,
+}: SettingsTabProps & { language: SupportedLanguage; detectedCountryCode?: string; resolvedMethodId: string }) {
+  return (
+    <>
+      <Section title="Calculation Authority">
+        <SettingRow
+          label="Auto-detect method by country"
+          subLabel={`Currently resolved: ${resolvedMethodId}`}
+          control={<Switch on={settings.autoDetectMethod} onClick={() => update({ autoDetectMethod: !settings.autoDetectMethod })} />}
+        />
+        {!settings.autoDetectMethod && (
+          <SettingRow
+            label="Method Preset"
+            control={
+              <NativeSelect
+                value={settings.methodId}
+                onChange={(methodId) => update({ methodId })}
+                options={builtInMethods.map((m) => [m.id, m.displayName])}
+              />
+            }
+          />
+        )}
+      </Section>
+      <Section title="Juristic School (Asr)">
+        <SettingRow
+          label="Hanafi Asr (Shadow factor 2x)"
+          subLabel="Turn off for Standard / Shafi'i / Maliki / Hanbali (1x)"
+          control={<Switch on={settings.hanafiAsr} onClick={() => update({ hanafiAsr: !settings.hanafiAsr })} />}
+        />
+      </Section>
+      <Section title="High Latitude Rule">
+        <SettingRow
+          label="High latitude adjustment"
+          control={
+            <NativeSelect
+              value={settings.highLatitudeRule}
+              onChange={(highLatitudeRule) => update({ highLatitudeRule })}
+              options={[
+                ["none", "None / Normal"],
+                ["middleOfNight", "Middle of the night"],
+                ["seventhOfNight", "One-seventh of the night"],
+                ["angleBased", "Angle-based rule"],
+              ]}
+            />
+          }
+        />
+      </Section>
+    </>
+  );
+}
+
+function NotificationsTab({ settings, update, language }: SettingsTabProps & { language: SupportedLanguage }) {
+  return (
+    <>
+      <Section title="Master Controls">
+        <SettingRow
+          label="Enable prayer notifications"
+          subLabel="Shows desktop alerts and adhan audio when prayer time arrives"
+          control={<Switch on={settings.masterNotificationsEnabled} onClick={() => update({ masterNotificationsEnabled: !settings.masterNotificationsEnabled })} />}
+        />
+      </Section>
+      <Section title="Default Sound & Audio">
+        <SettingRow
+          label="Notification Sound"
+          control={
+            <NativeSelect
+              value={settings.notificationDefaults.sound}
+              onChange={(sound) => update({ notificationDefaults: { ...settings.notificationDefaults, sound } })}
+              options={[
+                ["adhanMadinah", "Adhan (Al-Madinah)"],
+                ["adhanMakkah", "Adhan (Makkah)"],
+                ["takbir", "Takbir"],
+                ["softChime", "Soft Chime"],
+                ["systemDefault", "System Default Chime"],
+                ["none", "Mute"],
+              ]}
+            />
+          }
+        />
+        <SettingRow
+          label="Play Full Adhan"
+          control={
+            <Switch
+              on={settings.notificationDefaults.playFullAdhan}
+              onClick={() => update({ notificationDefaults: { ...settings.notificationDefaults, playFullAdhan: !settings.notificationDefaults.playFullAdhan } })}
+            />
+          }
+        />
+        <SettingRow
+          label="Early reminder minutes"
+          subLabel="Notification sent in advance before prayer starts"
+          control={
+            <NumberInput
+              value={settings.notificationDefaults.earlyReminderMinutes}
+              onChange={(earlyReminderMinutes) => update({ notificationDefaults: { ...settings.notificationDefaults, earlyReminderMinutes } })}
+            />
+          }
+        />
+      </Section>
+    </>
+  );
+}
+
+function FocusTab({ settings, update, language, onPreview }: SettingsTabProps & { language: SupportedLanguage; onPreview: () => void }) {
+  return (
+    <>
+      <Section title="Focus Mode Settings">
+        <SettingRow
+          label="Enable Focus Mode"
+          subLabel="Blocks distractions and provides gentle reminders during prayer times"
+          control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />}
+        />
+        <SettingRow
+          label="Focus duration (minutes)"
+          control={
+            <NumberInput
+              value={settings.focusDurationMinutes}
+              onChange={(focusDurationMinutes) => update({ focusDurationMinutes })}
+            />
+          }
+        />
+        <SettingRow
+          label="Emergency exit button"
+          subLabel="Allows instant dismiss if an urgent task arises"
+          control={<Switch on={settings.focusEmergencyExitEnabled} onClick={() => update({ focusEmergencyExitEnabled: !settings.focusEmergencyExitEnabled })} />}
+        />
+        <SettingRow
+          label="Test Focus Overlay"
+          control={
+            <button className="setting-btn" onClick={onPreview}>
+              <EyeOff size={14} />
+              <span>Preview Focus Mode</span>
+            </button>
+          }
+        />
+      </Section>
+    </>
+  );
+}
+
+function Onboarding({ settings, update, language }: { settings: AppSettings; update: (patch: Partial<AppSettings>) => void; language: SupportedLanguage }) {
+  return (
+    <div className="onboarding-overlay">
+      <div className="onboarding-card">
+        <IslamicRosetteLogo size={42} />
+        <h3 className="onboarding-title">Welcome to Salah</h3>
+        <p className="onboarding-desc">
+          Your peaceful, beautifully crafted Windows companion for prayer times, focus reminders, and consistent spiritual habits.
+        </p>
+        <div className="onboarding-actions">
+          <button
+            className="btn-reminder-prayed"
+            onClick={() => update({ didCompleteOnboarding: true })}
+          >
+            Get Started
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FocusPreview({ settings, prayer, onDone, language }: { settings: AppSettings; prayer: Prayer; onDone: () => void; language: SupportedLanguage }) {
+  return (
+    <div className="focus-overlay">
+      <IslamicRosetteLogo size={48} />
+      <h2 style={{ marginTop: 16 }}>Time for {prayerNames[prayer]}</h2>
+      <p>Take a peaceful pause, perform wudu, and connect with your Creator in prayer.</p>
+      {settings.focusEmergencyExitEnabled && (
+        <button className="btn-focus-dismiss" onClick={onDone}>
+          Done / Return to Desktop
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   TIME & CALCULATION HELPERS
+   ========================================================================== */
+
+function nextClockRefreshDelay(isWidget: boolean): number {
+  return isWidget ? 1_000 : 1_000;
+}
+
+function buildPrayerClock(
+  now: Date,
+  settings: AppSettings,
+  method: CalculationMethodAdapter,
+  coordinates: Coordinates,
+  timeZone: string,
+) {
+  const calculationParams = {
+    ...method.resolve(coordinates),
+    highLatitudeRule: settings.highLatitudeRule,
+  };
+  const { today, tomorrow } = calculateTodayAndTomorrow(now, coordinates, calculationParams, timeZone);
+  const resolved = settings.calculationMode === "manual"
+    ? {
+        today: applyManualSchedule(today, settings, timeZone),
+        tomorrow: applyManualSchedule(tomorrow, settings, timeZone),
+      }
+    : { today, tomorrow };
+  const next = nextPrayer(resolved.today, now) ?? nextPrayer(resolved.tomorrow, now);
+  return { today: resolved.today, tomorrow: resolved.tomorrow, next };
+}
+
+function applyManualSchedule(day: PrayerTimes, settings: AppSettings, timeZone: string): PrayerTimes {
+  const civil = civilDateFromDate(day.date, timeZone);
+  const base = zonedMidnight(civil, timeZone);
+  const times = { ...day.times };
+  for (const prayer of ["fajr", "dhuhr", "asr", "maghrib", "isha"] as Prayer[]) {
+    const minutes = settings.jamaatTimes[prayer] ?? defaultJamaatTimes[prayer];
+    if (minutes !== undefined) times[prayer] = new Date(base.getTime() + minutes * 60_000);
+  }
+  return { ...day, times };
+}
+
+function loadSettings(): AppSettings {
+  const fallback = defaultSettings();
+  try {
+    const raw = localStorage.getItem("prayer-times-settings.v1");
+    if (!raw) return fallback;
+    return mergeSettings(JSON.parse(raw));
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadPersistedSettings(): Promise<AppSettings | null> {
+  try {
+    const { load } = await import("@tauri-apps/plugin-store");
+    const store = await load("settings.json", { defaults: {}, autoSave: true });
+    const saved = await store.get<Partial<AppSettings>>("settings");
+    return saved ? mergeSettings(saved) : null;
+  } catch {
+    return loadSettings();
+  }
+}
+
+async function saveSettings(settings: AppSettings, storeReady: boolean) {
+  localStorage.setItem("prayer-times-settings.v1", JSON.stringify(settings));
+  if (!storeReady) return;
+  try {
+    const { load } = await import("@tauri-apps/plugin-store");
+    const store = await load("settings.json", { defaults: {}, autoSave: true });
+    await store.set("settings", settings);
+    await store.save();
+  } catch {}
+}
+
+function mergeSettings(saved: Partial<AppSettings>): AppSettings {
+  const fallback = defaultSettings();
+  return {
+    ...fallback,
+    ...saved,
+    manualCoordinates: { ...fallback.manualCoordinates, ...saved.manualCoordinates },
+    jamaatTimes: { ...fallback.jamaatTimes, ...saved.jamaatTimes },
+    notificationDefaults: { ...fallback.notificationDefaults, ...saved.notificationDefaults },
+    notifications: { ...fallback.notifications, ...saved.notifications },
+    timeZoneMode: saved.timeZoneMode ?? fallback.timeZoneMode,
+  };
+}
+
+async function sendDesktopNotification(title: string, body: string) {
+  try {
+    const notification = await import("@tauri-apps/plugin-notification");
+    let allowed = await notification.isPermissionGranted();
+    if (!allowed) {
+      const permission = await notification.requestPermission();
+      allowed = permission === "granted";
+    }
+    if (allowed) {
+      notification.sendNotification({ title, body });
+      return;
+    }
+  } catch {}
+
+  if ("Notification" in window) {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") new Notification(title, { body });
+  }
+}
+
+async function setLaunchAtLogin(enabled: boolean) {
+  try {
+    const autostart = await import("@tauri-apps/plugin-autostart");
+    if (enabled) await autostart.enable();
+    else await autostart.disable();
+  } catch {}
+}
+
+async function startNativeFocusMode() {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("start_focus_mode");
+  } catch {}
+}
+
+async function endNativeFocusMode() {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("end_focus_mode");
+  } catch {}
+}
+
+async function setWidgetVisibility(visible: boolean) {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke(visible ? "show_widget" : "hide_widget");
+  } catch {}
+}
+
+async function startWidgetDrag() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch {}
+}
+
+function buildRuntimeSchedule(
+  today: PrayerTimes,
+  tomorrow: PrayerTimes,
+  settings: AppSettings,
+  timeZone: string,
+  language: SupportedLanguage,
+): RuntimeScheduledEvent[] {
+  const events: RuntimeScheduledEvent[] = [];
+  for (const day of [today, tomorrow]) {
+    for (const entry of orderedTimes(day)) {
+      const cfg = resolvedNotification(settings, entry.prayer);
+      const label = prayerLabel(language, entry.prayer);
+      const civil = civilDateFromDate(entry.time, timeZone);
+      const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      if (settings.masterNotificationsEnabled && cfg.notify) {
+        events.push({
+          id: `${dayKey}:${entry.prayer}:adhan`,
+          prayer: entry.prayer,
+          atMs: notificationTime(entry.prayer, entry.time, settings).getTime(),
+          title: `${label} time`,
+          body: `${label} is now at ${formatClock(entry.time, timeZone, language)}.`,
+          playSound: true,
+          sound: cfg.sound,
+          playFullAdhan: cfg.playFullAdhan,
+          startFocus: false,
+        });
+        if (cfg.earlyReminderEnabled) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:early`,
+            prayer: entry.prayer,
+            atMs: entry.time.getTime() - cfg.earlyLeadMinutes * 60_000,
+            title: `${label} soon`,
+            body: `${label} starts in ${cfg.earlyLeadMinutes} minutes.`,
+            playSound: false,
+            sound: undefined,
+            playFullAdhan: false,
+            startFocus: false,
+          });
+        }
+        if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:iqamah`,
+            prayer: entry.prayer,
+            atMs: entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000,
+            title: `${label} iqamah`,
+            body: `${label} iqamah reminder.`,
+            playSound: false,
+            sound: undefined,
+            playFullAdhan: false,
+            startFocus: false,
+          });
+        }
+      }
+      if (shouldFocus(settings, entry.prayer)) {
+        events.push({
+          id: `${dayKey}:${entry.prayer}:focus`,
+          prayer: entry.prayer,
+          atMs: entry.time.getTime(),
+          title: `${label} focus`,
+          body: `${label} is in progress.`,
+          playSound: false,
+          sound: undefined,
+          playFullAdhan: false,
+          startFocus: true,
+        });
+      }
+    }
+  }
+  return events;
+}
+
+async function fireDueAlerts({
+  now,
+  today,
+  tomorrow,
+  settings,
+  timeZone,
+  fired,
+  playSound,
+  showFocus,
+}: {
+  now: Date;
+  today: PrayerTimes;
+  tomorrow: PrayerTimes;
+  settings: AppSettings;
+  timeZone: string;
+  fired: Set<string>;
+  playSound: (sound: NotificationSound, playFullAdhan: boolean) => Promise<void>;
+  showFocus: (prayer: Prayer) => Promise<void>;
+}) {
+  const notificationWindowMs = 1_150;
+  for (const day of [today, tomorrow]) {
+    for (const entry of orderedTimes(day)) {
+      const cfg = resolvedNotification(settings, entry.prayer);
+      const label = prayerNames[entry.prayer];
+      const civil = civilDateFromDate(entry.time, timeZone);
+      const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      const events: Array<{ kind: string; at: Date; title: string; body: string; sound: boolean }> = [
+        { kind: "adhan", at: notificationTime(entry.prayer, entry.time, settings), title: `${label} time`, body: `${label} is now at ${formatClock(entry.time, timeZone)}.`, sound: true },
+      ];
+      if (cfg.earlyReminderEnabled) {
+        events.push({ kind: "early", at: new Date(entry.time.getTime() - cfg.earlyLeadMinutes * 60_000), title: `${label} soon`, body: `${label} starts in ${cfg.earlyLeadMinutes} minutes.`, sound: false });
+      }
+      if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
+        events.push({ kind: "iqamah", at: new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000), title: `${label} iqamah`, body: `${label} iqamah reminder.`, sound: false });
+      }
+      for (const event of events) {
+        const key = `${dayKey}:${entry.prayer}:${event.kind}`;
+        if (fired.has(key)) continue;
+        if (settings.masterNotificationsEnabled && cfg.notify && Math.abs(now.getTime() - event.at.getTime()) <= notificationWindowMs) {
+          fired.add(key);
+          await sendDesktopNotification(event.title, event.body);
+          if (event.sound && cfg.sound) await playSound(cfg.sound, cfg.playFullAdhan);
+        }
+      }
+      if (shouldFocus(settings, entry.prayer)) {
+        const key = `${dayKey}:${entry.prayer}:focus`;
+        if (!fired.has(key) && Math.abs(now.getTime() - entry.time.getTime()) <= notificationWindowMs) {
+          fired.add(key);
+          await showFocus(entry.prayer);
+        }
+      }
+    }
+  }
+}
+
+function nextAlertCheckDelay(
+  now: Date,
+  today: PrayerTimes,
+  tomorrow: PrayerTimes,
+  settings: AppSettings,
+  timeZone: string,
+  fired: Set<string>,
+): number {
+  const upcoming: number[] = [];
+  for (const day of [today, tomorrow]) {
+    for (const entry of orderedTimes(day)) {
+      const cfg = resolvedNotification(settings, entry.prayer);
+      const civil = civilDateFromDate(entry.time, timeZone);
+      const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      if (settings.masterNotificationsEnabled && cfg.notify) {
+        addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:adhan`, notificationTime(entry.prayer, entry.time, settings));
+        if (cfg.earlyReminderEnabled) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:early`, new Date(entry.time.getTime() - cfg.earlyLeadMinutes * 60_000));
+        }
+        if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:iqamah`, new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000));
+        }
+      }
+      if (shouldFocus(settings, entry.prayer)) {
+        addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus`, entry.time);
+      }
+    }
+  }
+
+  const next = upcoming
+    .filter((time) => time > now.getTime() + 50)
+    .sort((a, b) => a - b)[0];
+  if (!next) return 60_000;
+  return Math.min(60_000, Math.max(250, next - now.getTime() - 500));
+}
+
+function addPendingAlertTime(upcoming: number[], fired: Set<string>, key: string, at: Date) {
+  if (!fired.has(key)) upcoming.push(at.getTime());
+}
+
+function notificationTime(prayer: Prayer, time: Date, settings: AppSettings): Date {
+  if (settings.calculationMode === "manual" && isObligatory(prayer)) {
+    return new Date(time.getTime() - Math.max(0, settings.azanBeforeJamaat) * 60_000);
+  }
+  return time;
+}
+
+function shouldFocus(settings: AppSettings, prayer: Prayer): boolean {
+  if (!settings.focusModeEnabled) return false;
+  if (settings.focusTrigger === "all") return true;
+  if (settings.focusTrigger === "fajrIsha") return prayer === "fajr" || prayer === "isha";
+  return isObligatory(prayer);
+}
+
+function soundUrl(sound: NotificationSound, playFullAdhan: boolean): string | null {
+  if (sound === "none" || sound === "systemDefault") return null;
+  if (playFullAdhan && sound === "adhanMadinah") return "/audio/adhan-madinah.m4a";
+  if (playFullAdhan && sound === "adhanMakkah") return "/audio/adhan-makkah.m4a";
+  switch (sound) {
+    case "adhanMadinah": return "/audio/adhan-madinah.m4a";
+    case "adhanMakkah": return "/audio/adhan-makkah.m4a";
+    case "softChime": return "/audio/soft-chime.mp3";
+    case "takbir": return "/audio/takbir.mp3";
+    default: return null;
+  }
+}

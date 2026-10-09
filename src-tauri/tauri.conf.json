@@ -1,0 +1,73 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Prayer Times",
+  "version": "0.1.10",
+  "identifier": "com.wdmahbubur.prayertimes.windows",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev -- --port 5173",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Salah",
+        "width": 1220,
+        "height": 800,
+        "minWidth": 860,
+        "minHeight": 620,
+        "resizable": true,
+        "center": true,
+        "fullscreen": false,
+        "decorations": true
+      },
+      {
+        "label": "widget",
+        "title": "Prayer Widget",
+        "url": "index.html?widget=true",
+        "width": 320,
+        "height": 118,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "x": 32,
+        "y": 96
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "wdmahbubur",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0QUNCNkZDNjgxN0E0NUMKUldSY3BCZG8vTGFzTkZFZGg2eE5TNjBza3NuLzl6RDdkeXc3cndsUWpDRkk2SzI0dXlwd0pKQ1cK",
+      "endpoints": [
+        "https://github.com/wdmahbubur/prayer-time-windows/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
