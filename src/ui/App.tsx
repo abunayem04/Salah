@@ -40,7 +40,7 @@ import { currentPrayer, ishraq, longCountdown, nextPrayer, orderedTimes, shortCo
 import { defaultJamaatTimes, defaultPrayerNotification, defaultSettings, resolvedNotification } from "../core/settings";
 import { inferCountryCode, inferCoordinatesFromTimeZone, popularCities, type CityLocation } from "../core/systemDetection";
 import { isObligatory, obligatoryPrayers } from "../core/types";
-import type { AppSettings, CalculationMethodAdapter, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
+import type { AppSettings, CalculationMethodAdapter, CalculationSource, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
 
 type SidebarNav = "overview" | "prayerTimes" | "accountability" | "history" | "settings";
 type SettingsTab = "general" | "location" | "calculation" | "notifications" | "focus";
@@ -974,25 +974,28 @@ export function App() {
 
                   <div className="header-meta-divider" />
 
-                  {/* Online / Offline Sync Badge */}
+                  {/* Primary Engine & Backup Status Badges */}
                   <div className="header-sync-status">
-                    {isSyncing ? (
-                      <span className="api-badge syncing">
-                        <RotateCcw size={11} className="spin" />
-                        <span>Syncing API</span>
-                      </span>
-                    ) : syncResult?.source === "api" ? (
-                      <span className="api-badge online" title="Prayer times synchronized with Aladhan cloud API">
+                    <span
+                      className="api-badge astronomical"
+                      title={`Primary Engine: ${method.displayName}${settings.hanafiAsr ? " • Hanafi Asr" : ""}`}
+                    >
+                      <Sparkles size={11} />
+                      <span>Solar Engine (Primary)</span>
+                    </span>
+
+                    {syncResult?.source === "api" ? (
+                      <span className="api-badge online" title="Cloud API Backup synced with Aladhan">
                         <Wifi size={11} />
-                        <span>Cloud Synced</span>
+                        <span>Cloud Backup Ready</span>
                       </span>
                     ) : (
                       <span
                         className="api-badge offline"
-                        title={syncResult?.error ? `Offline (${syncResult.error}) - Using astronomical engine` : "Offline Astronomical engine active"}
+                        title={syncResult?.error ? `Cloud API Backup (${syncResult.error})` : "Cloud API Backup offline"}
                       >
                         <WifiOff size={11} />
-                        <span>Offline Engine</span>
+                        <span>Backup Offline</span>
                       </span>
                     )}
                   </div>
@@ -2182,7 +2185,25 @@ function CalculationTab({
 }: SettingsTabProps & { language: SupportedLanguage; detectedCountryCode?: string; resolvedMethodId: string }) {
   return (
     <>
-      <Section title="Calculation Authority">
+      <Section title="Calculation Engine & Authority">
+        <SettingRow
+          label="Primary Calculation System"
+          subLabel={
+            (settings.calculationSource ?? "astronomical") === "astronomical"
+              ? "Astronomical Calculation Engine (Offline, High-Precision Solar Equations — Active)"
+              : "Online Cloud API (Aladhan Cloud API Sync)"
+          }
+          control={
+            <NativeSelect
+              value={settings.calculationSource ?? "astronomical"}
+              onChange={(calculationSource) => update({ calculationSource: calculationSource as CalculationSource })}
+              options={[
+                ["astronomical", "Astronomical Engine (Primary — High Precision Solar)"],
+                ["api", "Online Cloud API (Aladhan API — Backup Mode)"],
+              ]}
+            />
+          }
+        />
         <SettingRow
           label="Auto-detect method by country"
           subLabel={`Currently resolved: ${resolvedMethodId}`}
@@ -2445,18 +2466,16 @@ function buildPrayerClock(
   apiToday?: PrayerTimes,
   apiTomorrow?: PrayerTimes,
 ) {
-  let today = apiToday;
-  let tomorrow = apiTomorrow;
+  const calculationParams = {
+    ...method.resolve(coordinates),
+    highLatitudeRule: settings.highLatitudeRule,
+  };
+  const calculated = calculateTodayAndTomorrow(now, coordinates, calculationParams, timeZone);
 
-  if (!today || !tomorrow) {
-    const calculationParams = {
-      ...method.resolve(coordinates),
-      highLatitudeRule: settings.highLatitudeRule,
-    };
-    const calculated = calculateTodayAndTomorrow(now, coordinates, calculationParams, timeZone);
-    if (!today) today = calculated.today;
-    if (!tomorrow) tomorrow = calculated.tomorrow;
-  }
+  // High-precision Astronomical Engine is PRIMARY!
+  // Only use API if user explicitly configured calculationSource === "api" and API times are available.
+  const today = (settings.calculationSource === "api" && apiToday) ? apiToday : calculated.today;
+  const tomorrow = (settings.calculationSource === "api" && apiTomorrow) ? apiTomorrow : calculated.tomorrow;
 
   const resolved = settings.calculationMode === "manual"
     ? {
@@ -2517,6 +2536,7 @@ function mergeSettings(saved: Partial<AppSettings>): AppSettings {
   return {
     ...fallback,
     ...saved,
+    calculationSource: saved.calculationSource ?? fallback.calculationSource,
     manualCoordinates: { ...fallback.manualCoordinates, ...saved.manualCoordinates },
     jamaatTimes: { ...fallback.jamaatTimes, ...saved.jamaatTimes },
     notificationDefaults: { ...fallback.notificationDefaults, ...saved.notificationDefaults },

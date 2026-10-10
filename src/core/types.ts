@@ -50,6 +50,7 @@ export type MenuBarStyle =
 
 export type MenuBarCountdownMode = "nextPrayer" | "currentWaqt";
 export type CalculationMode = "calculated" | "manual";
+export type CalculationSource = "astronomical" | "api";
 export type LocationMode = "automatic" | "manual";
 export type TimeZoneMode = { kind: "system" } | { kind: "explicit"; identifier: string };
 export type NotificationSound = "none" | "systemDefault" | "softChime" | "takbir" | "adhanMakkah" | "adhanMadinah";
@@ -91,6 +92,7 @@ export interface AppSettings {
   timeZoneMode: TimeZoneMode;
   autoDetectMethod: boolean;
   calculationMode: CalculationMode;
+  calculationSource?: CalculationSource;
   azanBeforeJamaat: number;
   manualKeepWaqt: boolean;
   jamaatTimes: Partial<Record<Prayer, number>>;

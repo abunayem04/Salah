@@ -38,6 +38,7 @@ export function defaultSettings(): AppSettings {
     timeZoneMode: { kind: "system" },
     autoDetectMethod: true,
     calculationMode: "calculated",
+    calculationSource: "astronomical",
     azanBeforeJamaat: 15,
     manualKeepWaqt: true,
     jamaatTimes: defaultJamaatTimes,
