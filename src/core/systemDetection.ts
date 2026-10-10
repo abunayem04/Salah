@@ -35,17 +35,29 @@ const timeZoneCountryHints: Array<[RegExp, string]> = [
 ];
 
 export const popularCities: CityLocation[] = [
-  // Bangladesh (Primary local divisions)
+  // Bangladesh (Primary local divisions & major districts)
   { id: "bd-dhaka", name: "Dhaka", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.8103, longitude: 90.4125 },
   { id: "bd-chittagong", name: "Chittagong", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 22.3569, longitude: 91.7832 },
+  { id: "bd-khulna", name: "Khulna", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 22.8456, longitude: 89.5403 },
   { id: "bd-sylhet", name: "Sylhet", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.8949, longitude: 91.8687 },
   { id: "bd-rajshahi", name: "Rajshahi", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.3745, longitude: 88.6042 },
-  { id: "bd-khulna", name: "Khulna", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 22.8456, longitude: 89.5403 },
   { id: "bd-barisal", name: "Barisal", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 22.7010, longitude: 90.3535 },
   { id: "bd-rangpur", name: "Rangpur", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 25.7439, longitude: 89.2752 },
   { id: "bd-mymensingh", name: "Mymensingh", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.7471, longitude: 90.4203 },
   { id: "bd-comilla", name: "Comilla", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.4682, longitude: 91.1788 },
   { id: "bd-bogura", name: "Bogura", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.8465, longitude: 89.3777 },
+  { id: "bd-coxsbazar", name: "Cox's Bazar", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 21.4272, longitude: 92.0058 },
+  { id: "bd-gazipur", name: "Gazipur", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.9999, longitude: 90.4203 },
+  { id: "bd-narayanganj", name: "Narayanganj", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.6238, longitude: 90.5000 },
+  { id: "bd-jessore", name: "Jessore", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.1664, longitude: 89.2081 },
+  { id: "bd-kushtia", name: "Kushtia", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.9013, longitude: 89.1205 },
+  { id: "bd-dinajpur", name: "Dinajpur", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 25.6217, longitude: 88.6354 },
+  { id: "bd-tangail", name: "Tangail", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.2513, longitude: 89.9167 },
+  { id: "bd-faridpur", name: "Faridpur", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.6071, longitude: 89.8429 },
+  { id: "bd-pabna", name: "Pabna", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 24.0129, longitude: 89.2483 },
+  { id: "bd-noakhali", name: "Noakhali", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 22.8696, longitude: 91.0995 },
+  { id: "bd-brahmanbaria", name: "Brahmanbaria", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.9571, longitude: 91.1119 },
+  { id: "bd-feni", name: "Feni", country: "Bangladesh", countryCode: "BD", timeZone: "Asia/Dhaka", latitude: 23.0159, longitude: 91.3976 },
 
   // Middle East & Holy Sites
   { id: "sa-makkah", name: "Makkah", country: "Saudi Arabia", countryCode: "SA", timeZone: "Asia/Riyadh", latitude: 21.4225, longitude: 39.8262 },
@@ -86,6 +98,26 @@ export const popularCities: CityLocation[] = [
   { id: "au-melbourne", name: "Melbourne", country: "Australia", countryCode: "AU", timeZone: "Australia/Melbourne", latitude: -37.8136, longitude: 144.9631 },
 ];
 
+export function findNearestCity(lat: number, lon: number, thresholdKm = 35): CityLocation | undefined {
+  let nearest: CityLocation | undefined;
+  let minDistance = Infinity;
+
+  for (const city of popularCities) {
+    const dLat = (city.latitude - lat) * 111;
+    const dLon = (city.longitude - lon) * 111 * Math.cos((lat * Math.PI) / 180);
+    const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+    if (dist < minDistance) {
+      minDistance = dist;
+      nearest = city;
+    }
+  }
+
+  if (minDistance <= thresholdKm) {
+    return nearest;
+  }
+  return undefined;
+}
+
 export function inferCountryCode(timeZone: string): string | undefined {
   const browserLocales = [...(navigator.languages ?? []), navigator.language].filter(Boolean);
   for (const locale of browserLocales) {
@@ -125,4 +157,136 @@ export function inferCoordinatesFromTimeZone(timeZone: string): (Coordinates & {
   if (/Jakarta/i.test(timeZone)) return { latitude: -6.2088, longitude: 106.8456, elevation: 0, city: "Jakarta", country: "Indonesia", countryCode: "ID" };
 
   return undefined;
+}
+
+export interface DetectedLocationResult {
+  latitude: number;
+  longitude: number;
+  elevation: number;
+  cityName: string;
+  source: "gps" | "ip" | "timezone";
+}
+
+export async function detectPreciseLocation(forceGps = false): Promise<DetectedLocationResult> {
+  // 1. Try Device GPS first
+  if (typeof navigator !== "undefined" && navigator.geolocation) {
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: forceGps ? 10000 : 6000,
+          maximumAge: 30000,
+        });
+      });
+
+      const lat = Number(pos.coords.latitude.toFixed(4));
+      const lon = Number(pos.coords.longitude.toFixed(4));
+      const elevation = pos.coords.altitude ? Math.round(pos.coords.altitude) : 0;
+
+      const nearest = findNearestCity(lat, lon, 35);
+      if (nearest) {
+        return {
+          latitude: lat,
+          longitude: lon,
+          elevation,
+          cityName: `${nearest.name}, ${nearest.country}`,
+          source: "gps",
+        };
+      }
+
+      try {
+        const res = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
+          { signal: AbortSignal.timeout(4000) },
+        );
+        if (res.ok) {
+          const geo = await res.json();
+          const place = geo.city || geo.locality || geo.principalSubdivision;
+          if (place) {
+            return {
+              latitude: lat,
+              longitude: lon,
+              elevation,
+              cityName: `${place}, ${geo.countryName || "Bangladesh"}`,
+              source: "gps",
+            };
+          }
+        }
+      } catch {}
+
+      return {
+        latitude: lat,
+        longitude: lon,
+        elevation,
+        cityName: `GPS (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`,
+        source: "gps",
+      };
+    } catch {
+      // GPS not available or rejected, fall back to high-speed IP
+    }
+  }
+
+  // 2. High-speed, unblocked IP Geolocation providers
+  try {
+    const res = await fetch("https://ipwho.is/", { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success !== false && typeof data.latitude === "number" && typeof data.longitude === "number") {
+        const lat = Number(data.latitude.toFixed(4));
+        const lon = Number(data.longitude.toFixed(4));
+        const nearest = findNearestCity(lat, lon, 40);
+        const city = nearest ? nearest.name : (data.city || data.region || "Detected City");
+        const country = data.country || "Bangladesh";
+        return {
+          latitude: lat,
+          longitude: lon,
+          elevation: 0,
+          cityName: `${city}, ${country}`,
+          source: "ip",
+        };
+      }
+    }
+  } catch {}
+
+  try {
+    const res = await fetch("https://freeipapi.com/api/json", { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.latitude === "number" && typeof data.longitude === "number") {
+        const lat = Number(data.latitude.toFixed(4));
+        const lon = Number(data.longitude.toFixed(4));
+        const nearest = findNearestCity(lat, lon, 40);
+        const city = nearest ? nearest.name : (data.cityName || data.regionName || "Detected City");
+        const country = data.countryName || "Bangladesh";
+        return {
+          latitude: lat,
+          longitude: lon,
+          elevation: 0,
+          cityName: `${city}, ${country}`,
+          source: "ip",
+        };
+      }
+    }
+  } catch {}
+
+  // 3. Fallback: Timezone estimation
+  const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "Asia/Dhaka";
+  const tzMatch = inferCoordinatesFromTimeZone(tz);
+  if (tzMatch) {
+    return {
+      latitude: tzMatch.latitude,
+      longitude: tzMatch.longitude,
+      elevation: tzMatch.elevation ?? 0,
+      cityName: `${tzMatch.city}, ${tzMatch.country}`,
+      source: "timezone",
+    };
+  }
+
+  return {
+    latitude: 22.8456,
+    longitude: 89.5403,
+    elevation: 0,
+    cityName: "Khulna, Bangladesh",
+    source: "ip",
+  };
 }

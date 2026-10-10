@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bell,
@@ -38,7 +38,7 @@ import { calculateTodayAndTomorrow } from "../core/engine";
 import { civilDateFromDate, formatClock, zonedMidnight } from "../core/timeZone";
 import { currentPrayer, ishraq, longCountdown, nextPrayer, orderedTimes, shortCountdown } from "../core/prayerTimes";
 import { defaultJamaatTimes, defaultPrayerNotification, defaultSettings, resolvedNotification } from "../core/settings";
-import { inferCountryCode, inferCoordinatesFromTimeZone, popularCities, type CityLocation } from "../core/systemDetection";
+import { detectPreciseLocation, findNearestCity, inferCountryCode, inferCoordinatesFromTimeZone, popularCities, type CityLocation, type DetectedLocationResult } from "../core/systemDetection";
 import { isObligatory, obligatoryPrayers } from "../core/types";
 import type { AppSettings, CalculationMethodAdapter, CalculationSource, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
 
@@ -353,13 +353,18 @@ export function App() {
   );
 
   const [detectedCityName, setDetectedCityName] = useState<string>(() => {
-    const tzMatch = inferCoordinatesFromTimeZone(
-      settings.timeZoneMode.kind === "explicit"
-        ? settings.timeZoneMode.identifier
-        : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-    );
-    return tzMatch ? `${tzMatch.city}, ${tzMatch.country}` : "Auto Location";
+    const saved = localStorage.getItem("salah_detected_city");
+    if (saved) return saved;
+    const nearest = findNearestCity(settings.manualCoordinates.latitude, settings.manualCoordinates.longitude, 40);
+    if (nearest) return `${nearest.name}, ${nearest.country}`;
+    return "Khulna, Bangladesh";
   });
+
+  const [showLocationModal, setShowLocationModal] = useState<boolean>(() => {
+    return localStorage.getItem("salah_location_verified") !== "true";
+  });
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [locationSource, setLocationSource] = useState<"gps" | "ip" | "timezone">("ip");
 
   const coordinates = useMemo(() => {
     if (settings.locationMode === "manual") {
@@ -378,67 +383,56 @@ export function App() {
     return settings.manualCoordinates;
   }, [settings.locationMode, settings.manualCoordinates, systemDetectedLocation, timeZone]);
 
-  // Background auto-detection of location from IP or GPS
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const handleAutoDetect = useCallback(async (forceGps = false) => {
+    setIsDetectingLocation(true);
+    try {
+      const res = await detectPreciseLocation(forceGps);
+      updateSettings({
+        locationMode: "automatic",
+        manualCoordinates: {
+          latitude: res.latitude,
+          longitude: res.longitude,
+          elevation: res.elevation,
+        },
+      });
+      setDetectedCityName(res.cityName);
+      setLocationSource(res.source);
+      localStorage.setItem("salah_detected_city", res.cityName);
+    } catch (e) {
+      console.warn("Location detection error:", e);
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  }, [updateSettings]);
+
+  // Background auto-detection of location from device GPS or high-speed Network on startup
   useEffect(() => {
     if (settings.locationMode !== "automatic") return;
 
     let cancelled = false;
 
-    // Immediately sync if still default Istanbul
-    if (
-      systemDetectedLocation &&
-      Math.abs(settings.manualCoordinates.latitude - 41.0082) < 0.001 &&
-      Math.abs(settings.manualCoordinates.longitude - 28.9784) < 0.001 &&
-      timeZone !== "Europe/Istanbul"
-    ) {
+    detectPreciseLocation(false).then((res) => {
+      if (cancelled || !res) return;
       updateSettings({
         manualCoordinates: {
-          latitude: systemDetectedLocation.latitude,
-          longitude: systemDetectedLocation.longitude,
-          elevation: systemDetectedLocation.elevation ?? 0,
+          latitude: res.latitude,
+          longitude: res.longitude,
+          elevation: res.elevation,
         },
       });
-      setDetectedCityName(`${systemDetectedLocation.city}, ${systemDetectedLocation.country}`);
-    }
-
-    // IP Geolocation query to fine-tune to exact city
-    fetch("https://ipapi.co/json/")
-      .then((res) => res.json())
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (typeof data.latitude === "number" && typeof data.longitude === "number") {
-          const lat = Number(data.latitude.toFixed(4));
-          const lon = Number(data.longitude.toFixed(4));
-          updateSettings({
-            manualCoordinates: { latitude: lat, longitude: lon, elevation: 0 },
-          });
-          const name = data.city ? `${data.city}, ${data.country_name || data.country}` : systemDetectedLocation ? `${systemDetectedLocation.city}, ${systemDetectedLocation.country}` : "Detected Location";
-          setDetectedCityName(name);
-        }
-      })
-      .catch(() => {
-        if (navigator.geolocation && !cancelled) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (cancelled) return;
-              updateSettings({
-                manualCoordinates: {
-                  latitude: Number(pos.coords.latitude.toFixed(4)),
-                  longitude: Number(pos.coords.longitude.toFixed(4)),
-                  elevation: pos.coords.altitude ? Math.round(pos.coords.altitude) : 0,
-                },
-              });
-            },
-            () => {},
-            { timeout: 6000 },
-          );
-        }
-      });
+      setDetectedCityName(res.cityName);
+      setLocationSource(res.source);
+      localStorage.setItem("salah_detected_city", res.cityName);
+    }).catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [settings.locationMode, systemDetectedLocation, timeZone]);
+  }, [settings.locationMode]);
 
   const handleSelectCity = (city: CityLocation) => {
     updateSettings({
@@ -450,7 +444,11 @@ export function App() {
       },
       timeZoneMode: { kind: "explicit", identifier: city.timeZone },
     });
-    setDetectedCityName(`${city.name}, ${city.country}`);
+    const name = `${city.name}, ${city.country}`;
+    setDetectedCityName(name);
+    localStorage.setItem("salah_detected_city", name);
+    localStorage.setItem("salah_location_verified", "true");
+    setShowLocationModal(false);
   };
 
   useEffect(() => {
@@ -500,8 +498,6 @@ export function App() {
     document.documentElement.lang = language;
     return () => document.body.classList.remove("widget-body");
   }, [isWidget, language]);
-
-  const updateSettings = (patch: Partial<AppSettings>) => setSettings((current) => ({ ...current, ...patch }));
 
   const playNotificationSound = async (sound: NotificationSound, playFullAdhan: boolean) => {
     const url = soundUrl(sound, playFullAdhan);
@@ -957,10 +953,16 @@ export function App() {
                   <div className="header-greeting-text">
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <h2 className="header-greeting-title">Assalamu Alaikum, Nayem</h2>
-                      <span className="header-location-badge" title={`Active: ${detectedCityName} (${coordinates.latitude.toFixed(2)}°, ${coordinates.longitude.toFixed(2)}°)`}>
+                      <button
+                        type="button"
+                        className="header-location-badge"
+                        onClick={() => setShowLocationModal(true)}
+                        title={`Active: ${detectedCityName} (${coordinates.latitude.toFixed(2)}°, ${coordinates.longitude.toFixed(2)}°) — Click to change or re-detect GPS`}
+                      >
                         <MapPin size={11} />
                         <span>{detectedCityName.split(",")[0]}</span>
-                      </span>
+                        <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 2 }} />
+                      </button>
                     </div>
                     <p className="header-greeting-sub">Make space for what matters.</p>
                   </div>
@@ -1749,6 +1751,22 @@ export function App() {
         </main>
       </div>
 
+      {showLocationModal && (
+        <LocationPermissionModal
+          detectedCityName={detectedCityName}
+          coordinates={coordinates}
+          locationSource={locationSource}
+          isDetecting={isDetectingLocation}
+          onConfirm={() => {
+            localStorage.setItem("salah_location_verified", "true");
+            setShowLocationModal(false);
+          }}
+          onGpsDetect={() => void handleAutoDetect(true)}
+          onSelectCity={handleSelectCity}
+          onClose={() => setShowLocationModal(false)}
+        />
+      )}
+
       {focusPreview && (
         <FocusPreview
           session={focusSession ?? { prayer: focusPrayer, targetEndTime: Date.now() + 15 * 60_000 }}
@@ -1758,6 +1776,151 @@ export function App() {
           onDone={endFocusMode}
         />
       )}
+    </div>
+  );
+}
+
+function LocationPermissionModal({
+  detectedCityName,
+  coordinates,
+  locationSource,
+  isDetecting,
+  onConfirm,
+  onGpsDetect,
+  onSelectCity,
+  onClose,
+}: {
+  detectedCityName: string;
+  coordinates: Coordinates;
+  locationSource: "gps" | "ip" | "timezone";
+  isDetecting: boolean;
+  onConfirm: () => void;
+  onGpsDetect: () => void;
+  onSelectCity: (city: CityLocation) => void;
+  onClose: () => void;
+}) {
+  const bangladeshDivisions = useMemo(() => {
+    return popularCities.filter((c) =>
+      ["bd-dhaka", "bd-chittagong", "bd-khulna", "bd-sylhet", "bd-rajshahi", "bd-barisal", "bd-rangpur", "bd-mymensingh"].includes(c.id)
+    );
+  }, []);
+
+  const otherCities = useMemo(() => {
+    return popularCities.filter(
+      (c) => !["bd-dhaka", "bd-chittagong", "bd-khulna", "bd-sylhet", "bd-rajshahi", "bd-barisal", "bd-rangpur", "bd-mymensingh"].includes(c.id)
+    );
+  }, []);
+
+  const currentCityShort = detectedCityName.split(",")[0].trim();
+
+  return (
+    <div className="location-modal-backdrop" onClick={onClose}>
+      <div className="location-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="location-modal-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div className="location-modal-icon-wrap">
+              <MapPin size={22} />
+            </div>
+            <div>
+              <h3 className="location-modal-title">লোকেশন পারমিশন ও সনাক্তকরণ</h3>
+              <p className="location-modal-subtitle">
+                নামাজের নিখুঁত সময় হিসাবের জন্য আপনার সঠিক এলাকা বা বিভাগ নিশ্চিত করুন।
+              </p>
+            </div>
+          </div>
+          <button className="location-modal-close-btn" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="location-detected-box">
+          <div className="location-detected-label-row">
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--salah-text-muted)" }}>
+              {isDetecting ? "অনুসন্ধান চলছে..." : "বর্তমান সনাক্তকৃত অবস্থান:"}
+            </span>
+            <span className="location-detected-pill">
+              {locationSource === "gps" ? "🎯 ডিভাইস GPS" : locationSource === "ip" ? "🌐 অটো নেটওয়ার্ক" : "📍 আনুমানিক"}
+            </span>
+          </div>
+
+          <h4 className="location-detected-city">
+            {isDetecting ? "সনাক্ত করা হচ্ছে..." : detectedCityName}
+          </h4>
+
+          <p className="location-detected-coords">
+            কো-অর্ডিনেটস: {coordinates.latitude.toFixed(4)}° N, {coordinates.longitude.toFixed(4)}° E • উচ্চতা: {coordinates.elevation ?? 0}m
+          </p>
+        </div>
+
+        <div className="location-modal-actions">
+          <button
+            type="button"
+            className="location-btn-primary"
+            onClick={onConfirm}
+          >
+            <Check size={17} />
+            <span>{currentCityShort} নিশ্চিত করুন (Confirm Location)</span>
+          </button>
+
+          <button
+            type="button"
+            className="location-btn-secondary"
+            onClick={onGpsDetect}
+            disabled={isDetecting}
+          >
+            <LocateFixed size={16} />
+            <span>{isDetecting ? "জিপিএস খোঁজা হচ্ছে..." : "ডিভাইস GPS থেকে নিখুঁত লোকেশন নিন (Exact GPS)"}</span>
+          </button>
+        </div>
+
+        <div className="location-divisions-section">
+          <label className="location-section-title">
+            অথবা ১-ক্লিকে আপনার বিভাগ বেছে নিন:
+          </label>
+          <div className="location-divisions-grid">
+            {bangladeshDivisions.map((city) => {
+              const isActive = Math.abs(city.latitude - coordinates.latitude) < 0.1 && Math.abs(city.longitude - coordinates.longitude) < 0.1;
+              return (
+                <button
+                  key={city.id}
+                  type="button"
+                  className={`location-division-btn ${isActive ? "active" : ""}`}
+                  onClick={() => onSelectCity(city)}
+                  title={`${city.name}, ${city.country}`}
+                >
+                  {city.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+          <label className="location-section-title">
+            অন্যান্য জেলা বা আন্তর্জাতিক শহর:
+          </label>
+          <select
+            className="location-select-custom"
+            onChange={(e) => {
+              const found = popularCities.find((c) => c.id === e.target.value);
+              if (found) onSelectCity(found);
+            }}
+            defaultValue=""
+          >
+            <option value="" disabled>জেলা বা শহর বেছে নিন...</option>
+            <optgroup label="বাংলাদেশ (অন্যান্য জেলা)">
+              {otherCities.filter((c) => c.countryCode === "BD").map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.latitude.toFixed(2)}°, {c.longitude.toFixed(2)}°)</option>
+              ))}
+            </optgroup>
+            <optgroup label="আন্তর্জাতিক শহরসমূহ">
+              {otherCities.filter((c) => c.countryCode !== "BD").map((c) => (
+                <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1994,53 +2157,29 @@ function LocationTab({
   };
 
   const detectLocation = async () => {
-    setLocationStatus("Detecting location...");
+    setLocationStatus("Detecting location via GPS & Network...");
     setDetecting(true);
 
     try {
-      const res = await fetch("https://ipapi.co/json/");
-      const data = await res.json();
-      if (data && typeof data.latitude === "number" && typeof data.longitude === "number") {
-        update({
-          locationMode: "automatic",
-          manualCoordinates: {
-            latitude: Number(data.latitude.toFixed(6)),
-            longitude: Number(data.longitude.toFixed(6)),
-            elevation: 0,
-          },
-          timeZoneMode: data.timezone ? { kind: "explicit", identifier: data.timezone } : settings.timeZoneMode,
-        });
-        setLocationStatus(`Detected: ${data.city || data.region}, ${data.country_name || data.country}`);
-        setDetecting(false);
-        return;
+      const res = await detectPreciseLocation(true);
+      update({
+        locationMode: "automatic",
+        manualCoordinates: {
+          latitude: res.latitude,
+          longitude: res.longitude,
+          elevation: res.elevation,
+        },
+      });
+      setLocationStatus(`Detected: ${res.cityName} (${res.source.toUpperCase()})`);
+      const nearest = findNearestCity(res.latitude, res.longitude, 40);
+      if (nearest) {
+        onSelectCity(nearest);
       }
-    } catch {}
-
-    if (!navigator.geolocation) {
-      setLocationStatus("Geolocation unavailable on this device.");
+    } catch (error: any) {
+      setLocationStatus(error?.message || "Could not detect location.");
+    } finally {
       setDetecting(false);
-      return;
     }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        update({
-          locationMode: "automatic",
-          manualCoordinates: {
-            latitude: Number(position.coords.latitude.toFixed(6)),
-            longitude: Number(position.coords.longitude.toFixed(6)),
-            elevation: position.coords.altitude ? Math.round(position.coords.altitude) : settings.manualCoordinates.elevation,
-          },
-        });
-        setLocationStatus("GPS coordinates updated successfully.");
-        setDetecting(false);
-      },
-      (error) => {
-        setLocationStatus(error.message || "Could not detect location.");
-        setDetecting(false);
-      },
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 10 * 60_000 },
-    );
   };
 
   const selectedCityId = popularCities.find(
