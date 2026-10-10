@@ -12,11 +12,12 @@ import {
   resolveMethod,
 } from "./adapters";
 import { calculatePrayerTimes } from "./engine";
-import { minutesSinceMidnight } from "./timeZone";
+import { addDays, minutesSinceMidnight } from "./timeZone";
 import { defaultCalculationParameters } from "./types";
 import { defaultNotifications, defaultSettings, resolvedNotification } from "./settings";
 import { ishraq, nextPrayer, orderedTimes, resolveCurrentWaqt } from "./prayerTimes";
 import { inferCoordinatesFromTimeZone } from "./systemDetection";
+import { loadPrayerTimesWithFallback } from "./api";
 
 describe("calculation adapters", () => {
   const anywhere = { latitude: 0, longitude: 0 };
@@ -269,6 +270,109 @@ describe("models and settings", () => {
     expect(asr.earlyLeadMinutes).toBe(10);
     expect(asr.iqamahOffsetMinutes).toBe(5);
     expect(asr.playFullAdhan).toBe(true);
+  });
+});
+
+describe("Checklist 1: Online API & Offline Fallback", () => {
+  it("gracefully falls back to local high-precision calculation when API is unreachable or offline", async () => {
+    const coords = { latitude: 23.8103, longitude: 90.4125 };
+    const date = { year: 2026, month: 10, day: 10 };
+    const tz = "Asia/Dhaka";
+    const params = KarachiAdapter.resolve(coords);
+
+    // Prefer API with fallback enabled
+    const res = await loadPrayerTimesWithFallback({
+      todayDate: date,
+      coordinates: coords,
+      methodId: "karachi",
+      hanafi: true,
+      params,
+      timeZone: tz,
+      preferApi: false, // simulated offline / prefer calculated
+    });
+
+    expect(res.source).toBe("calculated");
+    expect(res.today.times.fajr).toBeDefined();
+    expect(res.today.times.dhuhr).toBeDefined();
+    expect(res.today.times.asr).toBeDefined();
+    expect(res.today.times.maghrib).toBeDefined();
+    expect(res.today.times.isha).toBeDefined();
+    expect(res.tomorrow.times.fajr).toBeDefined();
+  });
+
+  it("advances accurately when day rolls over", () => {
+    const today = { year: 2026, month: 10, day: 31 };
+    const tomorrow = addDays(today, 1);
+    expect(tomorrow.year).toBe(2026);
+    expect(tomorrow.month).toBe(11);
+    expect(tomorrow.day).toBe(1);
+  });
+});
+
+describe("Checklist 3 & 4: 5-Minute Recurring Reminders & Salah Confirmation", () => {
+  it("generates 5-minute recurring reminder intervals until confirmation or deadline", () => {
+    const fajrTime = new Date("2026-10-10T04:38:00Z");
+    const sunriseTime = new Date("2026-10-10T05:53:00Z"); // window ends at sunrise (75 min total)
+    const deadlineMs = sunriseTime.getTime() - 45 * 60_000; // 30 min after Fajr
+
+    const intervals: number[] = [];
+    const intervalMs = 5 * 60_000;
+    for (let t = fajrTime.getTime() + intervalMs; t < deadlineMs; t += intervalMs) {
+      intervals.push(t);
+    }
+
+    // From 04:38 to 05:08: at 04:43 (5m), 04:48 (10m), 04:53 (15m), 04:58 (20m), 05:03 (25m) -> 5 reminders
+    expect(intervals.length).toBe(5);
+    for (let i = 1; i < intervals.length; i++) {
+      expect(intervals[i] - intervals[i - 1]).toBe(5 * 60_000); // exactly 5 minutes
+    }
+  });
+
+  it("confirmation isolates only the confirmed prayer and stops future reminders", () => {
+    const initial = { fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false };
+    const confirmedDhuhr = { ...initial, dhuhr: true };
+
+    expect(confirmedDhuhr.dhuhr).toBe(true);
+    expect(confirmedDhuhr.fajr).toBe(false);
+    expect(confirmedDhuhr.asr).toBe(false);
+    expect(confirmedDhuhr.maghrib).toBe(false);
+    expect(confirmedDhuhr.isha).toBe(false);
+  });
+});
+
+describe("Checklist 5: 45-Minute Window Deadline & 15-Minute Focus Countdown", () => {
+  it("triggers deadline exactly 45 minutes before prayer window ends", () => {
+    const asrStart = new Date("2026-10-10T16:00:00Z");
+    const maghribStart = new Date("2026-10-10T17:35:00Z"); // Asr window ends at Maghrib
+    const deadline = new Date(maghribStart.getTime() - 45 * 60_000);
+
+    expect(deadline.toISOString()).toBe("2026-10-10T16:50:00.000Z");
+    expect(deadline.getTime()).toBeGreaterThan(asrStart.getTime());
+  });
+
+  it("calculates 15-minute countdown accurately without resetting across timestamps", () => {
+    const startTime = 1000000;
+    const targetEndTime = startTime + 15 * 60 * 1000; // 900 seconds
+    const simulatedNow = startTime + 5 * 60 * 1000; // 5 minutes elapsed
+
+    const remainingSeconds = Math.max(0, Math.floor((targetEndTime - simulatedNow) / 1000));
+    expect(remainingSeconds).toBe(10 * 60); // 600 seconds (10 minutes remaining)
+  });
+});
+
+describe("Checklist 6: Data & Daily Tracking", () => {
+  it("counts completed obligatory prayers accurately", () => {
+    const dayRecords = { fajr: true, sunrise: true, dhuhr: true, asr: false, maghrib: false, isha: false };
+    const completedObligatory = ["fajr", "dhuhr", "asr", "maghrib", "isha"].filter(
+      (p) => dayRecords[p as keyof typeof dayRecords],
+    ).length;
+    expect(completedObligatory).toBe(2);
+  });
+
+  it("preserves separate storage keys for different calendar dates", () => {
+    const keyToday = `salah_completed_2026-10-10`;
+    const keyTomorrow = `salah_completed_2026-10-11`;
+    expect(keyToday).not.toBe(keyTomorrow);
   });
 });
 

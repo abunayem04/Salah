@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   Bell,
   Calendar,
   Check,
@@ -25,10 +26,13 @@ import {
   Sunset,
   Target,
   Volume2,
+  Wifi,
+  WifiOff,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MWLAdapter, builtInMethods, methodIdForCountryCode, resolveMethod } from "../core/adapters";
+import { loadPrayerTimesWithFallback, type SyncResult } from "../core/api";
 import { buildTrayLabel, formatHijriDateLocalized, prayerLabel, resolveLanguage, t, textDirection, type SupportedLanguage } from "../core/localization";
 import { calculateTodayAndTomorrow } from "../core/engine";
 import { civilDateFromDate, formatClock, zonedMidnight } from "../core/timeZone";
@@ -177,6 +181,69 @@ export function App() {
   const firedAlerts = useRef(new Set<string>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Online API Sync State
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Windows Notification Permission Helper
+  const [permissionStatus, setPermissionStatus] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
+
+  const checkNotificationPermission = async () => {
+    try {
+      const notification = await import("@tauri-apps/plugin-notification");
+      const granted = await notification.isPermissionGranted();
+      setPermissionStatus(granted ? "granted" : "denied");
+    } catch {
+      if ("Notification" in window) {
+        setPermissionStatus(
+          Notification.permission === "granted"
+            ? "granted"
+            : Notification.permission === "denied"
+            ? "denied"
+            : "prompt",
+        );
+      } else {
+        setPermissionStatus("granted");
+      }
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    try {
+      const notification = await import("@tauri-apps/plugin-notification");
+      const granted = await notification.isPermissionGranted();
+      if (!granted) {
+        const res = await notification.requestPermission();
+        setPermissionStatus(res === "granted" ? "granted" : "denied");
+      } else {
+        setPermissionStatus("granted");
+      }
+    } catch {
+      if ("Notification" in window) {
+        const res = await Notification.requestPermission();
+        setPermissionStatus(res === "granted" ? "granted" : "denied");
+      }
+    }
+  };
+
+  useEffect(() => {
+    void checkNotificationPermission();
+  }, []);
+
+  // Focus Session Persistence across Restarts
+  const [focusSession, setFocusSession] = useState<{ prayer: Prayer; targetEndTime: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem("salah_active_focus_session");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.targetEndTime > Date.now()) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
   // Prayer Completion Tracking
   const todayKey = now.toISOString().slice(0, 10);
   const [completedPrayers, setCompletedPrayers] = useState<Record<Prayer, boolean>>(() => {
@@ -184,16 +251,54 @@ export function App() {
       const saved = localStorage.getItem(`salah_completed_${new Date().toISOString().slice(0, 10)}`);
       if (saved) return JSON.parse(saved);
     } catch {}
-    // Realistic default matching screenshot
-    return { fajr: false, sunrise: false, dhuhr: true, asr: false, maghrib: false, isha: false };
+    return { fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false };
   });
+
+  // Load daily completed tracking on mount or when day rolls over
+  useEffect(() => {
+    const loadDailyCompleted = async () => {
+      try {
+        const { load } = await import("@tauri-apps/plugin-store");
+        const store = await load("prayer-records.json", { defaults: {}, autoSave: true });
+        const saved = await store.get<Record<Prayer, boolean>>(`salah_completed_${todayKey}`);
+        if (saved) {
+          setCompletedPrayers(saved);
+          localStorage.setItem(`salah_completed_${todayKey}`, JSON.stringify(saved));
+          return;
+        }
+      } catch {}
+
+      try {
+        const saved = localStorage.getItem(`salah_completed_${todayKey}`);
+        if (saved) {
+          setCompletedPrayers(JSON.parse(saved));
+          return;
+        }
+      } catch {}
+
+      setCompletedPrayers({ fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false });
+    };
+
+    void loadDailyCompleted();
+  }, [todayKey, storeReady]);
+
+  const saveDailyCompleted = async (records: Record<Prayer, boolean>, dateKey: string) => {
+    try {
+      localStorage.setItem(`salah_completed_${dateKey}`, JSON.stringify(records));
+    } catch {}
+    if (!storeReady) return;
+    try {
+      const { load } = await import("@tauri-apps/plugin-store");
+      const store = await load("prayer-records.json", { defaults: {}, autoSave: true });
+      await store.set(`salah_completed_${dateKey}`, records);
+      await store.save();
+    } catch {}
+  };
 
   const togglePrayer = (prayer: Prayer) => {
     setCompletedPrayers((prev) => {
       const next = { ...prev, [prayer]: !prev[prayer] };
-      try {
-        localStorage.setItem(`salah_completed_${todayKey}`, JSON.stringify(next));
-      } catch {}
+      void saveDailyCompleted(next, todayKey);
       return next;
     });
   };
@@ -201,9 +306,7 @@ export function App() {
   const markPrayerCompleted = (prayer: Prayer) => {
     setCompletedPrayers((prev) => {
       const next = { ...prev, [prayer]: true };
-      try {
-        localStorage.setItem(`salah_completed_${todayKey}`, JSON.stringify(next));
-      } catch {}
+      void saveDailyCompleted(next, todayKey);
       return next;
     });
   };
@@ -224,11 +327,10 @@ export function App() {
           const count = obligatoryPrayers.filter((p) => parsed[p]).length;
           result.push(count >= 3);
         } catch {
-          result.push(i > 0);
+          result.push(false);
         }
       } else {
-        // Fallback for previous days to display realistic streak dots
-        result.push(i >= 2);
+        result.push(false);
       }
     }
     return result;
@@ -449,26 +551,88 @@ export function App() {
     }
   };
 
+  // Restore active focus session if present
+  useEffect(() => {
+    if (focusSession && focusSession.targetEndTime > Date.now()) {
+      setFocusPrayer(focusSession.prayer);
+      setFocusPreview(true);
+      void startNativeFocusMode();
+    }
+  }, []);
+
   const beginFocusMode = async (prayer: Prayer = clock.next?.prayer ?? "dhuhr") => {
+    const targetEndTime = Date.now() + 15 * 60_000;
+    const session = { prayer, targetEndTime };
     setFocusPrayer(prayer);
+    setFocusSession(session);
+    try {
+      localStorage.setItem("salah_active_focus_session", JSON.stringify(session));
+    } catch {}
     await startNativeFocusMode();
     setFocusPreview(true);
   };
 
   const endFocusMode = async () => {
     setFocusPreview(false);
+    setFocusSession(null);
+    try {
+      localStorage.removeItem("salah_active_focus_session");
+    } catch {}
     await endNativeFocusMode();
   };
 
+  const confirmPrayerAndEndFocus = async (prayer: Prayer) => {
+    markPrayerCompleted(prayer);
+    await endFocusMode();
+  };
+
+  // Sync prayer times with online API (fallback to local astronomical calculation)
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      setIsSyncing(true);
+      const todayCivil = civilDateFromDate(now, timeZone);
+      const calculationParams = {
+        ...method.resolve(coordinates),
+        highLatitudeRule: settings.highLatitudeRule,
+      };
+      const res = await loadPrayerTimesWithFallback({
+        todayDate: todayCivil,
+        coordinates,
+        methodId: method.id,
+        hanafi: settings.hanafiAsr,
+        params: calculationParams,
+        timeZone,
+        preferApi: settings.calculationMode !== "manual",
+      });
+      if (!cancelled) {
+        setSyncResult(res);
+        setIsSyncing(false);
+      }
+    };
+    void sync();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    coordinates.latitude,
+    coordinates.longitude,
+    method.id,
+    settings.hanafiAsr,
+    settings.highLatitudeRule,
+    settings.calculationMode,
+    timeZone,
+    todayKey,
+  ]);
 
   const clock = useMemo(
-    () => buildPrayerClock(now, settings, method, coordinates, timeZone),
-    [coordinates, method, now, settings, timeZone],
+    () => buildPrayerClock(now, settings, method, coordinates, timeZone, syncResult?.today, syncResult?.tomorrow),
+    [coordinates, method, now, settings, timeZone, syncResult],
   );
 
   const runtimeSchedule = useMemo(
-    () => buildRuntimeSchedule(clock.today, clock.tomorrow, settings, timeZone, language),
-    [clock.today.date.getTime(), clock.tomorrow.date.getTime(), language, settings, timeZone],
+    () => buildRuntimeSchedule(clock.today, clock.tomorrow, settings, timeZone, language, completedPrayers),
+    [clock.today, clock.tomorrow, language, settings, timeZone, completedPrayers],
   );
 
   const secondsUntilNext = clock.next ? Math.max(0, (clock.next.time.getTime() - now.getTime()) / 1000) : 0;
@@ -563,7 +727,15 @@ export function App() {
 
     const checkAlerts = async () => {
       const currentNow = new Date();
-      const currentClock = buildPrayerClock(currentNow, settings, method, coordinates, timeZone);
+      const currentClock = buildPrayerClock(
+        currentNow,
+        settings,
+        method,
+        coordinates,
+        timeZone,
+        syncResult?.today,
+        syncResult?.tomorrow,
+      );
       await fireDueAlerts({
         now: currentNow,
         today: currentClock.today,
@@ -571,6 +743,7 @@ export function App() {
         settings,
         timeZone,
         fired: firedAlerts.current,
+        completedPrayers,
         playSound: playNotificationSound,
         showFocus: async (prayer) => {
           if (shouldFocus(settings, prayer)) await beginFocusMode(prayer);
@@ -579,7 +752,15 @@ export function App() {
       if (!cancelled) {
         timer = window.setTimeout(
           checkAlerts,
-          nextAlertCheckDelay(currentNow, currentClock.today, currentClock.tomorrow, settings, timeZone, firedAlerts.current),
+          nextAlertCheckDelay(
+            currentNow,
+            currentClock.today,
+            currentClock.tomorrow,
+            settings,
+            timeZone,
+            firedAlerts.current,
+            completedPrayers,
+          ),
         );
       }
     };
@@ -589,7 +770,7 @@ export function App() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [coordinates, isWidget, method, nativeSchedulerAvailable, settings, timeZone]);
+  }, [coordinates, completedPrayers, isWidget, method, nativeSchedulerAvailable, settings, syncResult, timeZone]);
 
   if (isWidget) {
     return (
@@ -793,6 +974,31 @@ export function App() {
 
                   <div className="header-meta-divider" />
 
+                  {/* Online / Offline Sync Badge */}
+                  <div className="header-sync-status">
+                    {isSyncing ? (
+                      <span className="api-badge syncing">
+                        <RotateCcw size={11} className="spin" />
+                        <span>Syncing API</span>
+                      </span>
+                    ) : syncResult?.source === "api" ? (
+                      <span className="api-badge online" title="Prayer times synchronized with Aladhan cloud API">
+                        <Wifi size={11} />
+                        <span>Cloud Synced</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="api-badge offline"
+                        title={syncResult?.error ? `Offline (${syncResult.error}) - Using astronomical engine` : "Offline Astronomical engine active"}
+                      >
+                        <WifiOff size={11} />
+                        <span>Offline Engine</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="header-meta-divider" />
+
                   <div className="header-progress-stack">
                     <div className="header-progress-top">
                       <Clock size={14} />
@@ -808,6 +1014,21 @@ export function App() {
                   </div>
                 </div>
               </header>
+
+              {/* Windows Notification Permission Warning */}
+              {permissionStatus === "denied" && (
+                <div className="permission-warning-banner">
+                  <div className="permission-warning-content">
+                    <AlertCircle size={16} className="text-amber" />
+                    <span>
+                      Windows notifications are blocked for Salah. Enable them in Windows Settings &gt; System &gt; Notifications to receive prayer calls and 5-minute reminders.
+                    </span>
+                  </div>
+                  <button className="btn-permission-retry" onClick={requestNotificationPermission}>
+                    Check Again
+                  </button>
+                </div>
+              )}
 
               {/* International Adaptive Bento Grid */}
               <div className="salah-bento-grid">
@@ -1525,8 +1746,15 @@ export function App() {
         </main>
       </div>
 
-      {!settings.didCompleteOnboarding && <Onboarding settings={settings} update={updateSettings} language={language} />}
-      {focusPreview && <FocusPreview settings={settings} prayer={focusPrayer} onDone={endFocusMode} language={language} />}
+      {focusPreview && (
+        <FocusPreview
+          session={focusSession ?? { prayer: focusPrayer, targetEndTime: Date.now() + 15 * 60_000 }}
+          settings={settings}
+          language={language}
+          onConfirmPrayed={() => void confirmPrayerAndEndFocus(focusSession?.prayer ?? focusPrayer)}
+          onDone={endFocusMode}
+        />
+      )}
     </div>
   );
 }
@@ -2112,17 +2340,90 @@ function Onboarding({ settings, update, language }: { settings: AppSettings; upd
   );
 }
 
-function FocusPreview({ settings, prayer, onDone, language }: { settings: AppSettings; prayer: Prayer; onDone: () => void; language: SupportedLanguage }) {
+function FocusPreview({
+  session,
+  settings,
+  language,
+  onConfirmPrayed,
+  onDone,
+}: {
+  session: { prayer: Prayer; targetEndTime: number };
+  settings: AppSettings;
+  language: SupportedLanguage;
+  onConfirmPrayed: () => void;
+  onDone: () => void;
+}) {
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const totalDuration = 15 * 60; // 15-minute countdown (900s)
+  const remainingSeconds = Math.max(0, Math.floor((session.targetEndTime - nowMs) / 1000));
+  const isFinished = remainingSeconds === 0;
+
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  const timeFormatted = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+  const progressPercent = Math.min(100, Math.max(0, ((totalDuration - remainingSeconds) / totalDuration) * 100));
+  const strokeDashoffset = 283 - (283 * progressPercent) / 100;
+
   return (
     <div className="focus-overlay">
-      <IslamicRosetteLogo size={48} />
-      <h2 style={{ marginTop: 16 }}>Time for {prayerNames[prayer]}</h2>
-      <p>Take a peaceful pause, perform wudu, and connect with your Creator in prayer.</p>
-      {settings.focusEmergencyExitEnabled && (
-        <button className="btn-focus-dismiss" onClick={onDone}>
-          Done / Return to Desktop
-        </button>
-      )}
+      <div className="focus-card">
+        <div className="focus-badge">
+          <Clock size={14} />
+          <span>45-Minute Window Deadline Accountability</span>
+        </div>
+
+        <h2 className="focus-title">Time for {prayerLabel(language, session.prayer)}</h2>
+        <p className="focus-desc">
+          Take a peaceful pause, step away from distractions, and stand before Allah with complete presence of heart.
+        </p>
+
+        {/* 15-Minute Circular Countdown Clock */}
+        <div className="focus-countdown-container">
+          <svg className="focus-countdown-svg" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" className="focus-ring-bg" />
+            <circle
+              cx="50"
+              cy="50"
+              r="45"
+              className="focus-ring-progress"
+              style={{ strokeDasharray: 283, strokeDashoffset }}
+            />
+          </svg>
+          <div className="focus-countdown-time">
+            <span className="countdown-digits">{timeFormatted}</span>
+            <span className="countdown-label">
+              {isFinished ? "Time Complete" : "15m Focus Remaining"}
+            </span>
+          </div>
+        </div>
+
+        {isFinished && (
+          <div className="focus-finished-alert">
+            <AlertCircle size={16} />
+            <span>Focus time has elapsed. Please offer your prayer before the window ends.</span>
+          </div>
+        )}
+
+        <div className="focus-actions">
+          <button className="btn-focus-prayed" onClick={onConfirmPrayed}>
+            <Check size={18} />
+            <span>I Have Prayed (Confirm & Return)</span>
+          </button>
+
+          {settings.focusEmergencyExitEnabled && (
+            <button className="btn-focus-dismiss" onClick={onDone}>
+              Emergency Exit / Desktop
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2141,12 +2442,22 @@ function buildPrayerClock(
   method: CalculationMethodAdapter,
   coordinates: Coordinates,
   timeZone: string,
+  apiToday?: PrayerTimes,
+  apiTomorrow?: PrayerTimes,
 ) {
-  const calculationParams = {
-    ...method.resolve(coordinates),
-    highLatitudeRule: settings.highLatitudeRule,
-  };
-  const { today, tomorrow } = calculateTodayAndTomorrow(now, coordinates, calculationParams, timeZone);
+  let today = apiToday;
+  let tomorrow = apiTomorrow;
+
+  if (!today || !tomorrow) {
+    const calculationParams = {
+      ...method.resolve(coordinates),
+      highLatitudeRule: settings.highLatitudeRule,
+    };
+    const calculated = calculateTodayAndTomorrow(now, coordinates, calculationParams, timeZone);
+    if (!today) today = calculated.today;
+    if (!tomorrow) tomorrow = calculated.tomorrow;
+  }
+
   const resolved = settings.calculationMode === "manual"
     ? {
         today: applyManualSchedule(today, settings, timeZone),
@@ -2270,21 +2581,39 @@ async function startWidgetDrag() {
   } catch {}
 }
 
+function getPrayerWindowEnd(prayer: Prayer, day: PrayerTimes, nextDay: PrayerTimes): Date | undefined {
+  switch (prayer) {
+    case "fajr": return day.times.sunrise;
+    case "dhuhr": return day.times.asr;
+    case "asr": return day.times.maghrib;
+    case "maghrib": return day.times.isha;
+    case "isha": return nextDay.times.fajr;
+    default: return undefined;
+  }
+}
+
 function buildRuntimeSchedule(
   today: PrayerTimes,
   tomorrow: PrayerTimes,
   settings: AppSettings,
   timeZone: string,
   language: SupportedLanguage,
+  completedPrayers: Record<Prayer, boolean>,
 ): RuntimeScheduledEvent[] {
   const events: RuntimeScheduledEvent[] = [];
-  for (const day of [today, tomorrow]) {
+  const days = [today, tomorrow];
+  for (let dIdx = 0; dIdx < days.length; dIdx++) {
+    const day = days[dIdx];
+    const nextDay = dIdx === 0 ? tomorrow : day;
     for (const entry of orderedTimes(day)) {
+      const isCompleted = Boolean(completedPrayers[entry.prayer]);
       const cfg = resolvedNotification(settings, entry.prayer);
       const label = prayerLabel(language, entry.prayer);
       const civil = civilDateFromDate(entry.time, timeZone);
       const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
-      if (settings.masterNotificationsEnabled && cfg.notify) {
+      const windowEnd = getPrayerWindowEnd(entry.prayer, day, nextDay);
+
+      if (settings.masterNotificationsEnabled && cfg.notify && !isCompleted) {
         events.push({
           id: `${dayKey}:${entry.prayer}:adhan`,
           prayer: entry.prayer,
@@ -2323,18 +2652,46 @@ function buildRuntimeSchedule(
           });
         }
       }
-      if (shouldFocus(settings, entry.prayer)) {
-        events.push({
-          id: `${dayKey}:${entry.prayer}:focus`,
-          prayer: entry.prayer,
-          atMs: entry.time.getTime(),
-          title: `${label} focus`,
-          body: `${label} is in progress.`,
-          playSound: false,
-          sound: undefined,
-          playFullAdhan: false,
-          startFocus: true,
-        });
+
+      // Every 5-Minute Recurring Reminder (Only until prayer confirmed or deadline window)
+      if (isObligatory(entry.prayer) && settings.masterNotificationsEnabled && cfg.notify && !isCompleted && windowEnd) {
+        const startMs = entry.time.getTime();
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
+        const intervalMs = 5 * 60_000;
+        let count = 1;
+        for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:remind_5m_${count}`,
+            prayer: entry.prayer,
+            atMs: t,
+            title: `${label} Reminder (${count * 5}m elapsed)`,
+            body: `Have you prayed ${label}? Prayer window is active. Click to confirm.`,
+            playSound: true,
+            sound: "softChime",
+            playFullAdhan: false,
+            startFocus: false,
+          });
+          count++;
+        }
+      }
+
+      // 45-Minute Window Deadline Focus Mode (if not confirmed)
+      if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && !isCompleted && windowEnd) {
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        if (deadlineMs > entry.time.getTime()) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:focus_deadline_45m`,
+            prayer: entry.prayer,
+            atMs: deadlineMs,
+            title: `${label} Deadline Focus`,
+            body: `45 minutes left in ${label} window! 15-minute accountability session started.`,
+            playSound: true,
+            sound: "softChime",
+            playFullAdhan: false,
+            startFocus: true,
+          });
+        }
       }
     }
   }
@@ -2348,6 +2705,7 @@ async function fireDueAlerts({
   settings,
   timeZone,
   fired,
+  completedPrayers,
   playSound,
   showFocus,
 }: {
@@ -2357,16 +2715,25 @@ async function fireDueAlerts({
   settings: AppSettings;
   timeZone: string;
   fired: Set<string>;
+  completedPrayers: Record<Prayer, boolean>;
   playSound: (sound: NotificationSound, playFullAdhan: boolean) => Promise<void>;
   showFocus: (prayer: Prayer) => Promise<void>;
 }) {
   const notificationWindowMs = 1_150;
-  for (const day of [today, tomorrow]) {
+  const days = [today, tomorrow];
+  for (let dIdx = 0; dIdx < days.length; dIdx++) {
+    const day = days[dIdx];
+    const nextDay = dIdx === 0 ? tomorrow : day;
     for (const entry of orderedTimes(day)) {
+      const isCompleted = Boolean(completedPrayers[entry.prayer]);
+      if (isCompleted) continue; // Once prayer confirmed, cancel alerts for this prayer
+
       const cfg = resolvedNotification(settings, entry.prayer);
       const label = prayerNames[entry.prayer];
       const civil = civilDateFromDate(entry.time, timeZone);
       const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      const windowEnd = getPrayerWindowEnd(entry.prayer, day, nextDay);
+
       const events: Array<{ kind: string; at: Date; title: string; body: string; sound: boolean }> = [
         { kind: "adhan", at: notificationTime(entry.prayer, entry.time, settings), title: `${label} time`, body: `${label} is now at ${formatClock(entry.time, timeZone)}.`, sound: true },
       ];
@@ -2376,6 +2743,26 @@ async function fireDueAlerts({
       if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
         events.push({ kind: "iqamah", at: new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000), title: `${label} iqamah`, body: `${label} iqamah reminder.`, sound: false });
       }
+
+      // 5-Minute Recurring Reminders
+      if (isObligatory(entry.prayer) && windowEnd) {
+        const startMs = entry.time.getTime();
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
+        const intervalMs = 5 * 60_000;
+        let count = 1;
+        for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
+          events.push({
+            kind: `remind_5m_${count}`,
+            at: new Date(t),
+            title: `${label} Reminder (${count * 5}m elapsed)`,
+            body: `Have you prayed ${label}? Prayer window is active. Click to confirm.`,
+            sound: true,
+          });
+          count++;
+        }
+      }
+
       for (const event of events) {
         const key = `${dayKey}:${entry.prayer}:${event.kind}`;
         if (fired.has(key)) continue;
@@ -2385,11 +2772,16 @@ async function fireDueAlerts({
           if (event.sound && cfg.sound) await playSound(cfg.sound, cfg.playFullAdhan);
         }
       }
-      if (shouldFocus(settings, entry.prayer)) {
-        const key = `${dayKey}:${entry.prayer}:focus`;
-        if (!fired.has(key) && Math.abs(now.getTime() - entry.time.getTime()) <= notificationWindowMs) {
-          fired.add(key);
-          await showFocus(entry.prayer);
+
+      // 45-Minute Window Deadline Focus
+      if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && windowEnd) {
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        if (deadlineMs > entry.time.getTime()) {
+          const key = `${dayKey}:${entry.prayer}:focus_deadline_45m`;
+          if (!fired.has(key) && Math.abs(now.getTime() - deadlineMs) <= notificationWindowMs) {
+            fired.add(key);
+            await showFocus(entry.prayer);
+          }
         }
       }
     }
@@ -2403,13 +2795,21 @@ function nextAlertCheckDelay(
   settings: AppSettings,
   timeZone: string,
   fired: Set<string>,
+  completedPrayers: Record<Prayer, boolean>,
 ): number {
   const upcoming: number[] = [];
-  for (const day of [today, tomorrow]) {
+  const days = [today, tomorrow];
+  for (let dIdx = 0; dIdx < days.length; dIdx++) {
+    const day = days[dIdx];
+    const nextDay = dIdx === 0 ? tomorrow : day;
     for (const entry of orderedTimes(day)) {
+      if (completedPrayers[entry.prayer]) continue;
+
       const cfg = resolvedNotification(settings, entry.prayer);
       const civil = civilDateFromDate(entry.time, timeZone);
       const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      const windowEnd = getPrayerWindowEnd(entry.prayer, day, nextDay);
+
       if (settings.masterNotificationsEnabled && cfg.notify) {
         addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:adhan`, notificationTime(entry.prayer, entry.time, settings));
         if (cfg.earlyReminderEnabled) {
@@ -2419,8 +2819,26 @@ function nextAlertCheckDelay(
           addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:iqamah`, new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000));
         }
       }
-      if (shouldFocus(settings, entry.prayer)) {
-        addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus`, entry.time);
+
+      // Check upcoming 5-minute reminders
+      if (isObligatory(entry.prayer) && windowEnd) {
+        const startMs = entry.time.getTime();
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
+        const intervalMs = 5 * 60_000;
+        let count = 1;
+        for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:remind_5m_${count}`, new Date(t));
+          count++;
+        }
+      }
+
+      // Check upcoming 45-min deadline focus
+      if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && windowEnd) {
+        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        if (deadlineMs > entry.time.getTime()) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus_deadline_45m`, new Date(deadlineMs));
+        }
       }
     }
   }
