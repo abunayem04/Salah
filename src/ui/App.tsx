@@ -2457,6 +2457,35 @@ function GeneralTab({
           }
         />
       </Section>
+      <Section title="About & Credits">
+        <SettingRow
+          label="Salah"
+          subLabel="v0.1.10 • Islamic Prayer Times & Accountability Assistant"
+          control={
+            <span style={{ fontSize: "0.82rem", color: "#10b981", fontWeight: 600 }}>
+              MVP Ready
+            </span>
+          }
+        />
+        <SettingRow
+          label="Publisher"
+          subLabel="Developed & Published by Abu Nayem"
+          control={
+            <span style={{ fontSize: "0.82rem", color: "#cbd5e1", fontWeight: 500 }}>
+              Abu Nayem
+            </span>
+          }
+        />
+        <SettingRow
+          label="Inspiration & Foundation"
+          subLabel="Special credits and inspiration to wdmahbubur"
+          control={
+            <span style={{ fontSize: "0.82rem", color: "#94a3b8" }}>
+              wdmahbubur
+            </span>
+          }
+        />
+      </Section>
     </>
   );
 }

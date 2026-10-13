@@ -1,28 +1,26 @@
 # Salah
 
-A modern, beautiful Windows desktop app for Islamic prayer times, Adhan notifications, manual jamaat schedules, live next-prayer countdown, and a draggable desktop widget.
+A modern, beautiful Windows desktop app for Islamic prayer times, recurring reminders, solemn accountability mode, 7-day Salah journal, Adhan notifications, and a draggable desktop widget.
 
-![Latest release](https://img.shields.io/github/v/release/wdmahbubur/prayer-time-windows?label=latest)
-![Downloads](https://img.shields.io/github/downloads/wdmahbubur/prayer-time-windows/total)
+![Latest release](https://img.shields.io/github/v/release/abunayem04/Salah?label=latest)
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
+![Publisher](https://img.shields.io/badge/Publisher-Abu%20Nayem-10b981)
 
 ---
 
-**Prayer Times for Windows** is a lightweight desktop app that keeps the next **Islamic prayer time** (Salah / Namaz) visible from the Windows tray, shows a live countdown in the app and floating widget, plays **Adhan (Azan)** audio, and sends per-prayer reminders.
+**Salah for Windows** is a lightweight, privacy-focused desktop assistant published by **Abu Nayem**. It keeps the next **Islamic prayer time** (Salah / Namaz) visible from the Windows tray, shows a live countdown in the app and floating widget, plays **Adhan (Azan)** audio, provides periodic reminders until confirmed, and features a fullscreen **Accountability / Focus Mode** with solemn oath confirmation.
 
-It works offline from your coordinates and supports manual fixed jamaat schedules, multiple calculation methods, Standard / Hanafi Asr, high-latitude handling, Hijri date display, and a fullscreen Focus Mode that can block the screen at prayer time.
-
-This project is inspired by [`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos), rebuilt for Windows with **Tauri, React, TypeScript, and Rust**.
+It works completely offline from your coordinates and supports astronomical calculation with cloud fallback, manual fixed jamaat schedules, multiple calculation methods, Standard / Hanafi Asr, high-latitude handling, Hijri date display, and a 7-day Salah tracking journal.
 
 ## Install
 
-Download the latest Windows installer from [Releases](https://github.com/wdmahbubur/prayer-time-windows/releases/latest).
+Download the latest Windows installer from [Releases](https://github.com/abunayem04/Salah/releases/latest).
 
 Recommended:
 
-- `Prayer.Times_0.1.10_x64_en-US.msi` for standard Windows installation.
-- `Prayer.Times_0.1.10_x64-setup.exe` as an alternative setup installer.
+- `Salah_0.1.10_x64_en-US.msi` for standard Windows installation.
+- `Salah_0.1.10_x64-setup.exe` as an alternative setup installer.
 
 > **First launch / SmartScreen:** the installers are currently unsigned. Windows SmartScreen may show a warning until the app is signed with a trusted code-signing certificate and builds reputation.
 
@@ -265,11 +263,13 @@ To re-run a release for an existing tag, open **Actions -> Release -> Run workfl
 
 - Initial Windows Tauri app with prayer calculation, settings, tray, notifications, audio playback, onboarding, and installer output.
 
-## Attribution
+## Publisher & Credits
 
-Inspired by [`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos).
+- **Publisher & Maintainer**: **Abu Nayem** ([@abunayem04](https://github.com/abunayem04))
+- **Inspiration & Foundation**: Special credits to **wdmahbubur** ([`prayer-time-windows`](https://github.com/wdmahbubur/prayer-time-windows)) for the project inspiration and base foundation.
+- **Original Concept**: Inspired by [`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos).
 
-Audio assets were copied from the referenced macOS project resources during the porting work. Verify redistribution rights before publishing a public release.
+Audio assets were sourced from the referenced open-source projects during porting. Verify redistribution rights before publishing commercial releases.
 
 ## License
 

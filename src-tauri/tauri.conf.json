@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Prayer Times",
+  "productName": "Salah",
   "version": "0.1.10",
-  "identifier": "com.wdmahbubur.prayertimes.windows",
+  "identifier": "com.abunayem.salah",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",
@@ -46,7 +46,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "publisher": "wdmahbubur",
+    "publisher": "Abu Nayem",
     "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
@@ -63,7 +63,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0QUNCNkZDNjgxN0E0NUMKUldSY3BCZG8vTGFzTkZFZGg2eE5TNjBza3NuLzl6RDdkeXc3cndsUWpDRkk2SzI0dXlwd0pKQ1cK",
       "endpoints": [
-        "https://github.com/wdmahbubur/prayer-time-windows/releases/latest/download/latest.json"
+        "https://github.com/abunayem04/Salah/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
