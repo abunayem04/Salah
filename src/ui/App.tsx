@@ -33,6 +33,7 @@ import {
   FlaskConical,
   History,
   ShieldCheck,
+  User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MWLAdapter, builtInMethods, methodIdForCountryCode, resolveMethod } from "../core/adapters";
@@ -444,9 +445,10 @@ export function App() {
     return "Khulna, Bangladesh";
   });
 
-  const [showLocationModal, setShowLocationModal] = useState<boolean>(() => {
-    return localStorage.getItem("salah_location_verified") !== "true";
+  const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(() => {
+    return localStorage.getItem("salah_onboarding_completed") !== "true";
   });
+  const [onboardingInitialStep, setOnboardingInitialStep] = useState<number>(1);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationSource, setLocationSource] = useState<"gps" | "ip" | "timezone">("ip");
 
@@ -532,7 +534,6 @@ export function App() {
     setDetectedCityName(name);
     localStorage.setItem("salah_detected_city", name);
     localStorage.setItem("salah_location_verified", "true");
-    setShowLocationModal(false);
   };
 
   useEffect(() => {
@@ -1087,14 +1088,22 @@ export function App() {
           </button>
         </div>
 
-        <div className="drawer-footer-user">
+        <div
+          className="drawer-footer-user"
+          onClick={() => {
+            setOnboardingInitialStep(1);
+            setShowOnboardingModal(true);
+          }}
+          style={{ cursor: "pointer" }}
+          title="Edit Profile & Preferences"
+        >
           <div className="drawer-user-info">
             <div className="drawer-user-avatar">
-              <span>N</span>
+              <span>{(settings.userName?.trim() || "N").charAt(0).toUpperCase()}</span>
               <div className="drawer-avatar-dot" />
             </div>
             <div>
-              <strong className="drawer-user-name">Nayem</strong>
+              <strong className="drawer-user-name">{settings.userName?.trim() || "Nayem"}</strong>
               <p className="drawer-user-streak">{streakDays.filter(Boolean).length} of 7 Days Streak</p>
             </div>
           </div>
@@ -1118,11 +1127,18 @@ export function App() {
                   </button>
                   <div className="header-greeting-text">
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <h2 className="header-greeting-title">Assalamu Alaikum, Nayem</h2>
+                      <h2 className="header-greeting-title">
+                        {language === "bn"
+                          ? `আসসালামু আলাইকুম, ${settings.userName?.trim() || "মুসাফির"}`
+                          : `Assalamu Alaikum, ${settings.userName?.trim() || "Nayem"}`}
+                      </h2>
                       <button
                         type="button"
                         className="header-location-badge"
-                        onClick={() => setShowLocationModal(true)}
+                        onClick={() => {
+                          setOnboardingInitialStep(2);
+                          setShowOnboardingModal(true);
+                        }}
                         title={`Active: ${detectedCityName} (${coordinates.latitude.toFixed(2)}°, ${coordinates.longitude.toFixed(2)}°) — Click to change or re-detect GPS`}
                       >
                         <MapPin size={11} />
@@ -2007,6 +2023,10 @@ export function App() {
                     onCheckUpdates={() => void checkForAppUpdate(true)}
                     updateBusy={updateBusy}
                     updateStatus={updateStatus}
+                    onOpenOnboarding={() => {
+                      setOnboardingInitialStep(1);
+                      setShowOnboardingModal(true);
+                    }}
                   />
                 )}
                 {settingsTab === "location" && (
@@ -2057,6 +2077,10 @@ export function App() {
                     onTestFocus={() => void testFocusMode()}
                     onTestSolemn={() => testSolemnConfirmation()}
                     onTestHistory={() => void testToggleYesterdayRecord()}
+                    onTestOnboarding={() => {
+                      setOnboardingInitialStep(1);
+                      setShowOnboardingModal(true);
+                    }}
                   />
                 )}
               </div>
@@ -2083,19 +2107,29 @@ export function App() {
         </div>
       )}
 
-      {showLocationModal && (
-        <LocationPermissionModal
+      {showOnboardingModal && (
+        <OnboardingModal
+          initialStep={onboardingInitialStep}
+          settings={settings}
           detectedCityName={detectedCityName}
           coordinates={coordinates}
           locationSource={locationSource}
           isDetecting={isDetectingLocation}
-          onConfirm={() => {
-            localStorage.setItem("salah_location_verified", "true");
-            setShowLocationModal(false);
-          }}
+          language={language}
           onGpsDetect={() => void handleAutoDetect(true)}
           onSelectCity={handleSelectCity}
-          onClose={() => setShowLocationModal(false)}
+          onUpdateSettings={updateSettings}
+          onClose={() => {
+            localStorage.setItem("salah_onboarding_completed", "true");
+            localStorage.setItem("salah_location_verified", "true");
+            setShowOnboardingModal(false);
+          }}
+          onComplete={(finalUserName) => {
+            localStorage.setItem("salah_onboarding_completed", "true");
+            localStorage.setItem("salah_location_verified", "true");
+            setShowOnboardingModal(false);
+            triggerTestFeedback("onboarding", `আসসালামু আলাইকুম, ${finalUserName}! Salah-এ আপনাকে স্বাগতম।`);
+          }}
         />
       )}
 
@@ -2112,25 +2146,44 @@ export function App() {
   );
 }
 
-function LocationPermissionModal({
+function OnboardingModal({
+  initialStep = 1,
+  settings,
   detectedCityName,
   coordinates,
   locationSource,
   isDetecting,
-  onConfirm,
+  language,
   onGpsDetect,
   onSelectCity,
+  onUpdateSettings,
   onClose,
+  onComplete,
 }: {
+  initialStep?: number;
+  settings: AppSettings;
   detectedCityName: string;
   coordinates: Coordinates;
   locationSource: "gps" | "ip" | "timezone";
   isDetecting: boolean;
-  onConfirm: () => void;
+  language: SupportedLanguage;
   onGpsDetect: () => void;
   onSelectCity: (city: CityLocation) => void;
+  onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onClose: () => void;
+  onComplete: (userName: string) => void;
 }) {
+  const [step, setStep] = useState(initialStep);
+  const [nameInput, setNameInput] = useState(settings.userName || "");
+  const [hanafiAsr, setHanafiAsr] = useState(settings.hanafiAsr);
+  const [methodId, setMethodId] = useState(settings.methodId || "mwl");
+  const [focusEnabled, setFocusEnabled] = useState(settings.focusModeEnabled ?? true);
+  const [focusLead] = useState(settings.focusLeadMinutes ?? 45);
+  const [recurringEnabled, setRecurringEnabled] = useState(settings.recurringReminderEnabled ?? true);
+  const [recurringInterval] = useState(settings.recurringReminderIntervalMinutes ?? 5);
+  const [soundChoice, setSoundChoice] = useState<NotificationSound>(settings.notificationDefaults.sound ?? "takbir");
+  const [launchLogin, setLaunchLogin] = useState(settings.launchAtLogin ?? false);
+
   const bangladeshDivisions = useMemo(() => {
     return popularCities.filter((c) =>
       ["bd-dhaka", "bd-chittagong", "bd-khulna", "bd-sylhet", "bd-rajshahi", "bd-barisal", "bd-rangpur", "bd-mymensingh"].includes(c.id)
@@ -2143,115 +2196,509 @@ function LocationPermissionModal({
     );
   }, []);
 
+  const handleFinish = (overrideName?: string) => {
+    const finalName = (overrideName !== undefined ? overrideName : nameInput).trim();
+    onUpdateSettings({
+      userName: finalName,
+      hanafiAsr,
+      methodId,
+      focusModeEnabled: focusEnabled,
+      focusLeadMinutes: focusLead,
+      recurringReminderEnabled: recurringEnabled,
+      recurringReminderIntervalMinutes: recurringInterval,
+      launchAtLogin: launchLogin,
+      notificationDefaults: {
+        ...settings.notificationDefaults,
+        sound: soundChoice as any,
+      },
+      didCompleteOnboarding: true,
+    });
+    if (launchLogin) {
+      void setLaunchAtLogin(true);
+    }
+    onComplete(finalName || (language === "bn" ? "মুসাফির" : "Brother"));
+  };
+
+  const handleQuickStart = () => {
+    const finalName = nameInput.trim();
+    onUpdateSettings({
+      userName: finalName,
+      hanafiAsr: true,
+      methodId: "karachi",
+      focusModeEnabled: true,
+      focusLeadMinutes: 45,
+      recurringReminderEnabled: true,
+      recurringReminderIntervalMinutes: 5,
+      launchAtLogin: false,
+      didCompleteOnboarding: true,
+    });
+    onComplete(finalName || (language === "bn" ? "মুসাফির" : "Brother"));
+  };
+
   const currentCityShort = detectedCityName.split(",")[0].trim();
 
   return (
     <div className="location-modal-backdrop" onClick={onClose}>
-      <div className="location-modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="location-modal-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div className="location-modal-icon-wrap">
-              <MapPin size={22} />
+      <div className="onboarding-modal-card" onClick={(e) => e.stopPropagation()}>
+        {/* Step Indicator */}
+        <div className="onboarding-steps-indicator">
+          <div className={`onboarding-step-badge ${step === 1 ? "active" : step > 1 ? "completed" : ""}`}>
+            <span>1. প্রোফাইল</span>
+          </div>
+          <div className={`onboarding-step-badge ${step === 2 ? "active" : step > 2 ? "completed" : ""}`}>
+            <span>2. অবস্থান</span>
+          </div>
+          <div className={`onboarding-step-badge ${step === 3 ? "active" : step > 3 ? "completed" : ""}`}>
+            <span>3. হিসাব</span>
+          </div>
+          <div className={`onboarding-step-badge ${step === 4 ? "active" : step > 4 ? "completed" : ""}`}>
+            <span>4. রিমাইন্ডার</span>
+          </div>
+          <div className={`onboarding-step-badge ${step === 5 ? "active" : ""}`}>
+            <span>5. শুরু</span>
+          </div>
+        </div>
+
+        {/* STEP 1: Name & Welcome */}
+        {step === 1 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="location-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="location-modal-icon-wrap" style={{ background: "#ECFDF5", color: "#10B981" }}>
+                  <User size={22} />
+                </div>
+                <div>
+                  <h3 className="location-modal-title">আসসালামু আলাইকুম!</h3>
+                  <p className="location-modal-subtitle">
+                    Salah অ্যাপে আপনাকে স্বাগতম। আপনার ব্যক্তিগত প্রোফাইল তৈরি করুন।
+                  </p>
+                </div>
+              </div>
+              <button className="location-modal-close-btn" onClick={onClose} title="Skip/Close">
+                <X size={18} />
+              </button>
             </div>
-            <div>
-              <h3 className="location-modal-title">লোকেশন পারমিশন ও সনাক্তকরণ</h3>
-              <p className="location-modal-subtitle">
-                নামাজের নিখুঁত সময় হিসাবের জন্য আপনার সঠিক এলাকা বা বিভাগ নিশ্চিত করুন।
+
+            <div className="onboarding-name-input-group">
+              <label style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                আপনার সুন্দর নামটি কী?
+              </label>
+              <input
+                type="text"
+                className="onboarding-name-input"
+                placeholder="যেমন: নাইম / Nayem"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setStep(2);
+                  }
+                }}
+              />
+              <span style={{ fontSize: 11, color: "#6B7280" }}>
+                এই নামটি ড্যাশবোর্ডের গ্রিটিংস ও আপনার পার্সোনাল সালাহ ট্র্যাকিং জার্নালে প্রদর্শিত হবে।
+              </span>
+            </div>
+
+            {/* Live Greeting Preview */}
+            <div className="onboarding-greeting-preview-box">
+              <div className="onboarding-greeting-preview-icon">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <strong style={{ fontSize: 14, color: "#065F46" }}>
+                  {language === "bn"
+                    ? `আসসালামু আলাইকুম, ${nameInput.trim() || "মুসাফির"}!`
+                    : `Assalamu Alaikum, ${nameInput.trim() || "Brother"}!`}
+                </strong>
+                <p style={{ fontSize: 11, color: "#047857", margin: 0 }}>
+                  Make space for what matters. ওয়াক্তমতো সালাতের সূচনা হোক।
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Start Option */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                className="onboarding-quickstart-btn"
+                onClick={handleQuickStart}
+                title="সরাসরি হানাফি মাজহাব, ঢাকা অবস্থান ও সর্বোত্তম রিমাইন্ডার দিয়ে শুরু করুন"
+              >
+                <span>⚡ ১-ক্লিকে কুইক স্টার্ট (Quick Start)</span>
+              </button>
+              <button
+                type="button"
+                className="location-btn-primary"
+                style={{ width: "auto", padding: "10px 20px" }}
+                onClick={() => setStep(2)}
+              >
+                <span>পরবর্তী ধাপ: অবস্থান →</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: Location */}
+        {step === 2 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="location-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="location-modal-icon-wrap">
+                  <MapPin size={22} />
+                </div>
+                <div>
+                  <h3 className="location-modal-title">আপনার এলাকা বা অবস্থান</h3>
+                  <p className="location-modal-subtitle">
+                    নামাজের নিখুঁত সময় গণনার জন্য আপনার অবস্থান নিশ্চিত করুন।
+                  </p>
+                </div>
+              </div>
+              <button className="location-modal-close-btn" onClick={onClose} title="Skip/Close">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="location-detected-box">
+              <div className="location-detected-label-row">
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--salah-text-muted)" }}>
+                  {isDetecting ? "অনুসন্ধান চলছে..." : "বর্তমান সনাক্তকৃত অবস্থান:"}
+                </span>
+                <span className="location-detected-pill">
+                  {locationSource === "gps" ? "🎯 ডিভাইস GPS" : locationSource === "ip" ? "🌐 অটো নেটওয়ার্ক" : "📍 আনুমানিক"}
+                </span>
+              </div>
+
+              <h4 className="location-detected-city">
+                {isDetecting ? "সনাক্ত করা হচ্ছে..." : detectedCityName}
+              </h4>
+
+              <p className="location-detected-coords">
+                কো-অর্ডিনেটস: {coordinates.latitude.toFixed(4)}° N, {coordinates.longitude.toFixed(4)}° E • উচ্চতা: {coordinates.elevation ?? 0}m
               </p>
             </div>
+
+            <div className="location-modal-actions">
+              <button
+                type="button"
+                className="location-btn-secondary"
+                onClick={onGpsDetect}
+                disabled={isDetecting}
+              >
+                <LocateFixed size={16} />
+                <span>{isDetecting ? "জিপিএস খোঁজা হচ্ছে..." : "ডিভাইস GPS থেকে নিখুঁত লোকেশন নিন (Exact GPS)"}</span>
+              </button>
+            </div>
+
+            <div className="location-divisions-section">
+              <label className="location-section-title">
+                অথবা ১-ক্লিকে আপনার বিভাগ বেছে নিন:
+              </label>
+              <div className="location-divisions-grid">
+                {bangladeshDivisions.map((city) => {
+                  const isActive = Math.abs(city.latitude - coordinates.latitude) < 0.1 && Math.abs(city.longitude - coordinates.longitude) < 0.1;
+                  return (
+                    <button
+                      key={city.id}
+                      type="button"
+                      className={`location-division-btn ${isActive ? "active" : ""}`}
+                      onClick={() => onSelectCity(city)}
+                      title={`${city.name}, ${city.country}`}
+                    >
+                      {city.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="location-section-title">অন্যান্য জেলা বা আন্তর্জাতিক শহর:</label>
+              <select
+                className="location-select-custom"
+                onChange={(e) => {
+                  const found = popularCities.find((c) => c.id === e.target.value);
+                  if (found) onSelectCity(found);
+                }}
+                defaultValue=""
+              >
+                <option value="" disabled>জেলা বা শহর বেছে নিন...</option>
+                <optgroup label="বাংলাদেশ (অন্যান্য জেলা)">
+                  {otherCities.filter((c) => c.countryCode === "BD").map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.latitude.toFixed(2)}°, {c.longitude.toFixed(2)}°)</option>
+                  ))}
+                </optgroup>
+                <optgroup label="আন্তর্জাতিক শহরসমূহ">
+                  {otherCities.filter((c) => c.countryCode !== "BD").map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="onboarding-nav-actions">
+              <button type="button" className="location-btn-secondary" style={{ width: "auto" }} onClick={() => setStep(1)}>
+                ← পূর্ববর্তী
+              </button>
+              <button type="button" className="location-btn-primary" style={{ width: "auto", padding: "10px 20px" }} onClick={() => setStep(3)}>
+                পরবর্তী ধাপ: মাজহাব ও হিসাব →
+              </button>
+            </div>
           </div>
-          <button className="location-modal-close-btn" onClick={onClose} title="Close">
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
-        <div className="location-detected-box">
-          <div className="location-detected-label-row">
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--salah-text-muted)" }}>
-              {isDetecting ? "অনুসন্ধান চলছে..." : "বর্তমান সনাক্তকৃত অবস্থান:"}
-            </span>
-            <span className="location-detected-pill">
-              {locationSource === "gps" ? "🎯 ডিভাইস GPS" : locationSource === "ip" ? "🌐 অটো নেটওয়ার্ক" : "📍 আনুমানিক"}
-            </span>
-          </div>
+        {/* STEP 3: Madhab & Calculation */}
+        {step === 3 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="location-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="location-modal-icon-wrap" style={{ background: "#EEF2FF", color: "#4F46E5" }}>
+                  <Clock size={22} />
+                </div>
+                <div>
+                  <h3 className="location-modal-title">মাজহাব ও হিসাব পদ্ধতি</h3>
+                  <p className="location-modal-subtitle">
+                    আসরের ওয়াক্ত এবং ফজর/ঈশার সঠিক ডিগ্রির হিসাব নির্ধারণ করুন।
+                  </p>
+                </div>
+              </div>
+              <button className="location-modal-close-btn" onClick={onClose} title="Skip/Close">
+                <X size={18} />
+              </button>
+            </div>
 
-          <h4 className="location-detected-city">
-            {isDetecting ? "সনাক্ত করা হচ্ছে..." : detectedCityName}
-          </h4>
-
-          <p className="location-detected-coords">
-            কো-অর্ডিনেটস: {coordinates.latitude.toFixed(4)}° N, {coordinates.longitude.toFixed(4)}° E • উচ্চতা: {coordinates.elevation ?? 0}m
-          </p>
-        </div>
-
-        <div className="location-modal-actions">
-          <button
-            type="button"
-            className="location-btn-primary"
-            onClick={onConfirm}
-          >
-            <Check size={17} />
-            <span>{currentCityShort} নিশ্চিত করুন (Confirm Location)</span>
-          </button>
-
-          <button
-            type="button"
-            className="location-btn-secondary"
-            onClick={onGpsDetect}
-            disabled={isDetecting}
-          >
-            <LocateFixed size={16} />
-            <span>{isDetecting ? "জিপিএস খোঁজা হচ্ছে..." : "ডিভাইস GPS থেকে নিখুঁত লোকেশন নিন (Exact GPS)"}</span>
-          </button>
-        </div>
-
-        <div className="location-divisions-section">
-          <label className="location-section-title">
-            অথবা ১-ক্লিকে আপনার বিভাগ বেছে নিন:
-          </label>
-          <div className="location-divisions-grid">
-            {bangladeshDivisions.map((city) => {
-              const isActive = Math.abs(city.latitude - coordinates.latitude) < 0.1 && Math.abs(city.longitude - coordinates.longitude) < 0.1;
-              return (
-                <button
-                  key={city.id}
-                  type="button"
-                  className={`location-division-btn ${isActive ? "active" : ""}`}
-                  onClick={() => onSelectCity(city)}
-                  title={`${city.name}, ${city.country}`}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 8, display: "block" }}>
+                আসরের ওয়াক্ত হিসাব পদ্ধতি:
+              </label>
+              <div className="onboarding-selection-grid">
+                <div
+                  className={`onboarding-select-card ${hanafiAsr ? "active" : ""}`}
+                  onClick={() => setHanafiAsr(true)}
                 >
-                  {city.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                  <div className="onboarding-select-card-title">
+                    <span>হানাফি (Hanafi)</span>
+                    <span style={{ fontSize: 10, background: "#D1FAE5", color: "#065F46", padding: "2px 6px", borderRadius: 4 }}>
+                      বাংলাদেশ রেকমেন্ডেড
+                    </span>
+                  </div>
+                  <p className="onboarding-select-card-desc">
+                    ছায়া দুই গুণ হলে আসরের ওয়াক্ত শুরু হয়। বাংলাদেশ ও ভারতীয় উপমহাদেশে বহুল প্রচলিত।
+                  </p>
+                </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-          <label className="location-section-title">
-            অন্যান্য জেলা বা আন্তর্জাতিক শহর:
-          </label>
-          <select
-            className="location-select-custom"
-            onChange={(e) => {
-              const found = popularCities.find((c) => c.id === e.target.value);
-              if (found) onSelectCity(found);
-            }}
-            defaultValue=""
-          >
-            <option value="" disabled>জেলা বা শহর বেছে নিন...</option>
-            <optgroup label="বাংলাদেশ (অন্যান্য জেলা)">
-              {otherCities.filter((c) => c.countryCode === "BD").map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.latitude.toFixed(2)}°, {c.longitude.toFixed(2)}°)</option>
-              ))}
-            </optgroup>
-            <optgroup label="আন্তর্জাতিক শহরসমূহ">
-              {otherCities.filter((c) => c.countryCode !== "BD").map((c) => (
-                <option key={c.id} value={c.id}>{c.name}, {c.country}</option>
-              ))}
-            </optgroup>
-          </select>
-        </div>
+                <div
+                  className={`onboarding-select-card ${!hanafiAsr ? "active" : ""}`}
+                  onClick={() => setHanafiAsr(false)}
+                >
+                  <div className="onboarding-select-card-title">
+                    <span>স্ট্যান্ডার্ড / শাফিয়ী</span>
+                  </div>
+                  <p className="onboarding-select-card-desc">
+                    ছায়া এক গুণ হলে আসর শুরু হয় (শাফিয়ী, মালিকী, হাম্বলী পদ্ধতি)।
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                ক্যালকুলেশন পদ্ধতি (Calculation Method):
+              </label>
+              <select
+                className="location-select-custom"
+                value={methodId}
+                onChange={(e) => setMethodId(e.target.value)}
+              >
+                <option value="karachi">করাচি / ইসলামিক ফাউন্ডেশন (Karachi - 18°/18°)</option>
+                <option value="mwl">Muslim World League (MWL - 18°/17°)</option>
+                <option value="isna">Islamic Society of North America (ISNA)</option>
+                <option value="makkah">Umm al-Qura University, Makkah</option>
+                <option value="egypt">Egyptian General Authority of Survey</option>
+              </select>
+            </div>
+
+            <div className="onboarding-nav-actions">
+              <button type="button" className="location-btn-secondary" style={{ width: "auto" }} onClick={() => setStep(2)}>
+                ← পূর্ববর্তী
+              </button>
+              <button type="button" className="location-btn-primary" style={{ width: "auto", padding: "10px 20px" }} onClick={() => setStep(4)}>
+                পরবর্তী ধাপ: রিমাইন্ডার ও আযান →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: Reminders & Adhan */}
+        {step === 4 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="location-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="location-modal-icon-wrap" style={{ background: "#FEF3C7", color: "#D97706" }}>
+                  <Bell size={22} />
+                </div>
+                <div>
+                  <h3 className="location-modal-title">জবাবদিহিতা ও রিমাইন্ডার</h3>
+                  <p className="location-modal-subtitle">
+                    নামাজ সময়মতো আদায়ের জন্য আপনার পছন্দের সতর্কতা কনফিগার করুন।
+                  </p>
+                </div>
+              </div>
+              <button className="location-modal-close-btn" onClick={onClose} title="Skip/Close">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Focus Mode Row */}
+            <div className="onboarding-feature-toggle-row">
+              <div>
+                <strong style={{ fontSize: 13, color: "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+                  <EyeOff size={15} color="#059669" />
+                  Accountability / Focus Mode
+                </strong>
+                <p style={{ fontSize: 11, color: "#6B7280", margin: "2px 0 0" }}>
+                  ওয়াক্ত শেষ হওয়ার {focusLead} মিনিট আগে স্ক্রিন ব্লার ও কাউন্টডাউন চালু হবে।
+                </p>
+              </div>
+              <div
+                className={`salah-toggle-switch ${focusEnabled ? "active" : ""}`}
+                onClick={() => setFocusEnabled(!focusEnabled)}
+              >
+                <div className="salah-toggle-thumb" />
+              </div>
+            </div>
+
+            {/* 5-Min Recurring Reminder Row */}
+            <div className="onboarding-feature-toggle-row">
+              <div>
+                <strong style={{ fontSize: 13, color: "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+                  <RotateCcw size={15} color="#D97706" />
+                  প্রতি ৫ মিনিটে রিমাইন্ডার (তাগাদা)
+                </strong>
+                <p style={{ fontSize: 11, color: "#6B7280", margin: "2px 0 0" }}>
+                  নামাজ পড়েছি বলে নিশ্চিত না করা পর্যন্ত প্রতি {recurringInterval} মিনিট পর পর অ্যালার্ট।
+                </p>
+              </div>
+              <div
+                className={`salah-toggle-switch ${recurringEnabled ? "active" : ""}`}
+                onClick={() => setRecurringEnabled(!recurringEnabled)}
+              >
+                <div className="salah-toggle-thumb" />
+              </div>
+            </div>
+
+            {/* Sound Choice */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                আযান ও নোটিফিকেশন সাউন্ড:
+              </label>
+              <select
+                className="location-select-custom"
+                value={soundChoice}
+                onChange={(e) => setSoundChoice(e.target.value as NotificationSound)}
+              >
+                <option value="takbir">আল্লাহু আকবার (তাকবীর)</option>
+                <option value="adhanMakkah">মক্কা আযান (Makkah Adhan)</option>
+                <option value="adhanMadinah">মদিনা আযান (Madinah Adhan)</option>
+                <option value="softChime">সফট চিম (Soft Chime)</option>
+                <option value="systemDefault">সিস্টেম ডিফল্ট টোন</option>
+              </select>
+            </div>
+
+            {/* Windows Startup Toggle */}
+            <div className="onboarding-feature-toggle-row">
+              <div>
+                <strong style={{ fontSize: 13, color: "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Power size={15} color="#3B82F6" />
+                  কম্পিউটার অন হলে স্বয়ংক্রিয়ভাবে চালু
+                </strong>
+                <p style={{ fontSize: 11, color: "#6B7280", margin: "2px 0 0" }}>
+                  Windows স্টার্টআপের সময় Salah ব্যাকগ্রাউন্ড ট্রের মধ্যে সক্রিয় থাকবে।
+                </p>
+              </div>
+              <div
+                className={`salah-toggle-switch ${launchLogin ? "active" : ""}`}
+                onClick={() => setLaunchLogin(!launchLogin)}
+              >
+                <div className="salah-toggle-thumb" />
+              </div>
+            </div>
+
+            <div className="onboarding-nav-actions">
+              <button type="button" className="location-btn-secondary" style={{ width: "auto" }} onClick={() => setStep(3)}>
+                ← পূর্ববর্তী
+              </button>
+              <button type="button" className="location-btn-primary" style={{ width: "auto", padding: "10px 20px" }} onClick={() => setStep(5)}>
+                পরবর্তী ধাপ: সম্পন্ন করুন →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: Ready & Launch */}
+        {step === 5 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="location-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="location-modal-icon-wrap" style={{ background: "#DCFCE7", color: "#15803D" }}>
+                  <CheckCircle2 size={24} />
+                </div>
+                <div>
+                  <h3 className="location-modal-title">আলহামদুলিল্লাহ, সবকিছু প্রস্তুত!</h3>
+                  <p className="location-modal-subtitle">
+                    আপনার সেটিংস সংরক্ষিত হয়েছে। নিয়মিত সালাত আদায়ের যাত্রা শুরু করুন।
+                  </p>
+                </div>
+              </div>
+              <button className="location-modal-close-btn" onClick={onClose} title="Skip/Close">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ background: "#F8FAF9", borderRadius: 16, padding: "16px 18px", border: "1.5px solid #E8ECE9", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: "#6B7280" }}>ব্যবহারকারীর নাম:</span>
+                <strong style={{ fontSize: 14, color: "#111827" }}>{nameInput.trim() || "Brother"}</strong>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: "#6B7280" }}>নির্বাচিত এলাকা:</span>
+                <strong style={{ fontSize: 14, color: "var(--salah-green)" }}>{currentCityShort}</strong>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: "#6B7280" }}>আসরের মাজহাব:</span>
+                <strong style={{ fontSize: 13, color: "#111827" }}>{hanafiAsr ? "হানাফি (Hanafi)" : "স্ট্যান্ডার্ড"}</strong>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: "#6B7280" }}>জবাবদিহিতা মোড:</span>
+                <span style={{ fontSize: 12, color: "#065F46", background: "#D1FAE5", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
+                  {focusEnabled ? "সক্রিয় (Active)" : "নিষ্ক্রিয়"}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: "#6B7280" }}>পর্যায়ক্রমিক রিমাইন্ডার:</span>
+                <span style={{ fontSize: 12, color: "#92400E", background: "#FEF3C7", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
+                  প্রতি {recurringInterval} মিনিটে
+                </span>
+              </div>
+            </div>
+
+            <div className="onboarding-nav-actions" style={{ borderTop: "none", marginTop: 0 }}>
+              <button type="button" className="location-btn-secondary" style={{ width: "auto" }} onClick={() => setStep(4)}>
+                ← সংশোধন করুন
+              </button>
+              <button
+                type="button"
+                className="location-btn-primary"
+                style={{ width: "auto", padding: "12px 28px", fontSize: 15 }}
+                onClick={() => handleFinish()}
+              >
+                <Check size={18} />
+                <span>সালাহ শুরু করুন (Get Started)</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2374,7 +2821,8 @@ function GeneralTab({
   onCheckUpdates,
   updateBusy,
   updateStatus,
-}: SettingsTabProps & { language: SupportedLanguage; onCheckUpdates: () => void; updateBusy: boolean; updateStatus?: string }) {
+  onOpenOnboarding,
+}: SettingsTabProps & { language: SupportedLanguage; onCheckUpdates: () => void; updateBusy: boolean; updateStatus?: string; onOpenOnboarding: () => void }) {
   const toggleLaunchAtLogin = async () => {
     const next = !settings.launchAtLogin;
     update({ launchAtLogin: next });
@@ -2388,6 +2836,31 @@ function GeneralTab({
 
   return (
     <>
+      <Section title="User Profile (ব্যবহারকারীর প্রোফাইল)">
+        <SettingRow
+          label="Your Name (আপনার নাম)"
+          subLabel="ড্যাশবোর্ডের গ্রিটিংস ও আপনার পার্সোনাল জার্নালে প্রদর্শিত হবে"
+          control={
+            <input
+              type="text"
+              className="setting-input"
+              style={{ width: 140 }}
+              placeholder="যেমন: Nayem"
+              value={settings.userName ?? ""}
+              onChange={(e) => update({ userName: e.target.value })}
+            />
+          }
+        />
+        <SettingRow
+          label="Setup Wizard"
+          subLabel="প্রথমবারের অনবোর্ডিং সেটআপ উইজার্ড পুনরায় খুলুন"
+          control={
+            <button className="setting-btn" onClick={onOpenOnboarding}>
+              Open Setup Wizard
+            </button>
+          }
+        />
+      </Section>
       <Section title="Startup & Widget">
         <SettingRow label="Launch at startup" control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} />
         <SettingRow label="Show floating desktop widget" control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
@@ -2980,12 +3453,14 @@ function TestingTab({
   onTestFocus,
   onTestSolemn,
   onTestHistory,
+  onTestOnboarding,
 }: SettingsTabProps & {
   onTestAdhan: () => void;
   onTestRecurring: () => void;
   onTestFocus: () => void;
   onTestSolemn: () => void;
   onTestHistory: () => void;
+  onTestOnboarding: () => void;
 }) {
   return (
     <div>
@@ -3127,6 +3602,31 @@ function TestingTab({
           <button className="test-lab-btn-action" onClick={onTestHistory}>
             <History size={14} />
             <span>Toggle Yesterday Test Record</span>
+          </button>
+        </div>
+
+        {/* Test 6: First-Time Setup Wizard */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <User size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">6. Onboarding & Profile Setup Wizard</h4>
+                <p className="test-lab-card-desc">
+                  নতুন ইনস্টল অনবোর্ডিং ফ্লো, নাম ইনপুট, লোকেশন এবং ৫টি প্রাথমিক ধাপ পরীক্ষা করুন।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>প্রোফাইল নাম: {settings.userName ? `"${settings.userName}"` : "মুসাফির"}</span>
+            <span style={{ color: "#1E5144", fontWeight: 700 }}>রেডি</span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestOnboarding}>
+            <Sparkles size={14} />
+            <span>Open Onboarding Setup Wizard</span>
           </button>
         </div>
       </div>

@@ -2633,3 +2633,188 @@ button:not(:disabled), select, input {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ==========================================================================
+   FIRST-TIME ONBOARDING WIZARD MODAL
+   ========================================================================== */
+
+.onboarding-modal-card {
+  background: #FFFFFF;
+  border-radius: 24px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(17, 24, 39, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  padding: 28px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: slideUpModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.onboarding-steps-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.onboarding-step-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9CA3AF;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #F9FAFB;
+  transition: all 0.2s ease;
+}
+
+.onboarding-step-badge.active {
+  color: var(--salah-green);
+  background: #E8F3EE;
+  font-weight: 700;
+}
+
+.onboarding-step-badge.completed {
+  color: #059669;
+  background: #ECFDF5;
+}
+
+.onboarding-name-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.onboarding-name-input {
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 2px solid #E5E7EB;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  outline: none;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.onboarding-name-input:focus {
+  border-color: var(--salah-green);
+  box-shadow: 0 0 0 3px rgba(30, 81, 68, 0.12);
+}
+
+.onboarding-greeting-preview-box {
+  background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
+  border: 1.5px dashed #A7F3D0;
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-greeting-preview-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #10B981;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.onboarding-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.onboarding-select-card {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1.5px solid #E5E7EB;
+  background: #FFFFFF;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.onboarding-select-card:hover {
+  border-color: #CBD5E1;
+  background: #F8FAFC;
+}
+
+.onboarding-select-card.active {
+  border-color: var(--salah-green);
+  background: #E8F3EE;
+  box-shadow: 0 0 0 2px rgba(30, 81, 68, 0.15);
+}
+
+.onboarding-select-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding-select-card-desc {
+  font-size: 11px;
+  color: #6B7280;
+  line-height: 1.35;
+}
+
+.onboarding-feature-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  background: #F9FAFB;
+}
+
+.onboarding-nav-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px solid #F3F4F6;
+}
+
+.onboarding-quickstart-btn {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.onboarding-quickstart-btn:hover {
+  background: #FDE68A;
+}
+

@@ -118,6 +118,7 @@ export interface AppSettings {
   notifications: Partial<Record<Prayer, PrayerNotificationConfig>>;
   autoUpdateEnabled: boolean;
   didCompleteOnboarding: boolean;
+  userName?: string;
 }
 
 export function defaultCalculationParameters(overrides: Partial<CalculationParameters> = {}): CalculationParameters {

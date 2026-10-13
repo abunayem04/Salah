@@ -68,6 +68,7 @@ export function defaultSettings(): AppSettings {
     notifications: defaultNotifications(),
     autoUpdateEnabled: true,
     didCompleteOnboarding: false,
+    userName: "",
   };
 }
 
