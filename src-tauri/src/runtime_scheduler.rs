@@ -96,6 +96,12 @@ fn process_scheduler_tick<R: Runtime>(app: &AppHandle<R>, shared: &Arc<Mutex<Sch
 
   for event in due_events {
     if event.start_focus {
+      let _ = app
+        .notification()
+        .builder()
+        .title(event.title.clone())
+        .body(event.body.clone())
+        .show();
       let _ = app.emit("prayer-runtime-event", &event);
       continue;
     }

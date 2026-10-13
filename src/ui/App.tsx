@@ -29,6 +29,10 @@ import {
   Wifi,
   WifiOff,
   X,
+  CheckCircle2,
+  FlaskConical,
+  History,
+  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MWLAdapter, builtInMethods, methodIdForCountryCode, resolveMethod } from "../core/adapters";
@@ -43,7 +47,7 @@ import { isObligatory, obligatoryPrayers } from "../core/types";
 import type { AppSettings, CalculationMethodAdapter, CalculationSource, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
 
 type SidebarNav = "overview" | "prayerTimes" | "accountability" | "history" | "settings";
-type SettingsTab = "general" | "location" | "calculation" | "notifications" | "focus";
+type SettingsTab = "general" | "location" | "calculation" | "notifications" | "focus" | "testing";
 
 type RuntimeScheduledEvent = {
   id: string;
@@ -295,9 +299,31 @@ export function App() {
     } catch {}
   };
 
+  const [pendingSolemnPrayer, setPendingSolemnPrayer] = useState<Prayer | null>(null);
+  const [testFeedback, setTestFeedback] = useState<{ id: string; message: string } | null>(null);
+
+  const triggerTestFeedback = (id: string, message: string) => {
+    setTestFeedback({ id, message });
+    window.setTimeout(() => {
+      setTestFeedback((curr) => (curr?.id === id ? null : curr));
+    }, 4500);
+  };
+
   const togglePrayer = (prayer: Prayer) => {
     setCompletedPrayers((prev) => {
-      const next = { ...prev, [prayer]: !prev[prayer] };
+      const isCurrentlyDone = !!prev[prayer];
+      if (isCurrentlyDone) {
+        // Un-marking does not require solemn oath
+        const next = { ...prev, [prayer]: false };
+        void saveDailyCompleted(next, todayKey);
+        return next;
+      }
+      // If solemn confirmation is enabled, open the solemn oath confirmation modal
+      if (settings.solemnConfirmationEnabled ?? true) {
+        setPendingSolemnPrayer(prayer);
+        return prev;
+      }
+      const next = { ...prev, [prayer]: true };
       void saveDailyCompleted(next, todayKey);
       return next;
     });
@@ -309,6 +335,24 @@ export function App() {
       void saveDailyCompleted(next, todayKey);
       return next;
     });
+    setPendingSolemnPrayer(null);
+  };
+
+  const togglePastPrayerRecord = async (dateKey: string, prayer: Prayer) => {
+    if (dateKey === todayKey) {
+      togglePrayer(prayer);
+      return;
+    }
+    const saved = localStorage.getItem(`salah_completed_${dateKey}`);
+    let currentMap: Record<Prayer, boolean> = { fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false };
+    if (saved) {
+      try {
+        currentMap = JSON.parse(saved);
+      } catch {}
+    }
+    const nextMap = { ...currentMap, [prayer]: !currentMap[prayer] };
+    await saveDailyCompleted(nextMap, dateKey);
+    setCompletedPrayers((prev) => ({ ...prev }));
   };
 
   const completedCount = obligatoryPrayers.filter((p) => completedPrayers[p]).length;
@@ -334,6 +378,46 @@ export function App() {
       }
     }
     return result;
+  }, [now, completedPrayers]);
+
+  const pastDaysHistory = useMemo(() => {
+    const list: Array<{
+      dateKey: string;
+      label: string;
+      isToday: boolean;
+      records: Record<Prayer, boolean>;
+      completedCount: number;
+    }> = [];
+    const base = new Date(now);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      let records: Record<Prayer, boolean> = { fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false };
+      if (i === 0) {
+        records = completedPrayers;
+      } else {
+        const saved = localStorage.getItem(`salah_completed_${key}`);
+        if (saved) {
+          try {
+            records = JSON.parse(saved);
+          } catch {}
+        }
+      }
+      const count = obligatoryPrayers.filter((p) => records[p]).length;
+      let label = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      if (i === 0) label = `Today (${label})`;
+      else if (i === 1) label = `Yesterday (${label})`;
+
+      list.push({
+        dateKey: key,
+        label,
+        isToday: i === 0,
+        records,
+        completedCount: count,
+      });
+    }
+    return list;
   }, [now, completedPrayers]);
 
   const timeZone = settings.timeZoneMode.kind === "explicit"
@@ -557,7 +641,8 @@ export function App() {
   }, []);
 
   const beginFocusMode = async (prayer: Prayer = clock.next?.prayer ?? "dhuhr") => {
-    const targetEndTime = Date.now() + 15 * 60_000;
+    const durationMs = (settings.focusDurationMinutes ?? 15) * 60_000;
+    const targetEndTime = Date.now() + durationMs;
     const session = { prayer, targetEndTime };
     setFocusPrayer(prayer);
     setFocusSession(session);
@@ -578,8 +663,89 @@ export function App() {
   };
 
   const confirmPrayerAndEndFocus = async (prayer: Prayer) => {
-    markPrayerCompleted(prayer);
     await endFocusMode();
+    if (settings.solemnConfirmationEnabled ?? true) {
+      setPendingSolemnPrayer(prayer);
+    } else {
+      markPrayerCompleted(prayer);
+    }
+  };
+
+  const testAdhanNotification = async (targetPrayer: Prayer = clock.next?.prayer ?? "dhuhr") => {
+    const label = prayerNames[targetPrayer];
+    const pTime = clock.today.times[targetPrayer] ?? now;
+    const timeStr = formatClock(pTime, timeZone, language);
+    const title = `${label} Prayer Adhan`;
+    const body = `It is now time for ${label} (${timeStr}). Hayya 'alas-Salah!`;
+
+    const sound = settings.notificationDefaults.sound ?? "adhanMadinah";
+    void playNotificationSound(sound, settings.notificationDefaults.playFullAdhan);
+
+    let sentNative = false;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("trigger_test_notification", { title, body });
+      sentNative = true;
+    } catch {}
+    if (!sentNative) {
+      await sendDesktopNotification(title, body);
+    }
+    triggerTestFeedback("adhan", `Windows Notification & ${sound} triggered for ${label}!`);
+  };
+
+  const testRecurringReminder = async (targetPrayer: Prayer = activeWaqt) => {
+    const label = prayerNames[targetPrayer];
+    const intervalMins = settings.recurringReminderIntervalMinutes ?? 5;
+    const title = `${label} Reminder (${intervalMins}m elapsed)`;
+    const body = `Have you prayed ${label}? Prayer window is active. Click to confirm.`;
+
+    void playNotificationSound("softChime", false);
+
+    let sentNative = false;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("trigger_test_notification", { title, body });
+      sentNative = true;
+    } catch {}
+    if (!sentNative) {
+      await sendDesktopNotification(title, body);
+    }
+    triggerTestFeedback("recurring", `Recurring reminder alert (${intervalMins}m interval) dispatched!`);
+  };
+
+  const testFocusMode = async (targetPrayer: Prayer = activeWaqt) => {
+    triggerTestFeedback("focus", "Starting Fullscreen Focus Mode session...");
+    await beginFocusMode(targetPrayer);
+  };
+
+  const testSolemnConfirmation = (targetPrayer: Prayer = activeWaqt) => {
+    setPendingSolemnPrayer(targetPrayer);
+    triggerTestFeedback("solemn", `Solemn Oath Dialog opened for ${prayerNames[targetPrayer]}!`);
+  };
+
+  const testToggleYesterdayRecord = async () => {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yKey = yesterday.toISOString().slice(0, 10);
+    const saved = localStorage.getItem(`salah_completed_${yKey}`);
+    let currentMap: Record<Prayer, boolean> = { fajr: false, sunrise: false, dhuhr: false, asr: false, maghrib: false, isha: false };
+    if (saved) {
+      try {
+        currentMap = JSON.parse(saved);
+      } catch {}
+    }
+    const hasAny = obligatoryPrayers.some((p) => currentMap[p]);
+    const nextMap: Record<Prayer, boolean> = {
+      fajr: !hasAny,
+      sunrise: false,
+      dhuhr: !hasAny,
+      asr: !hasAny,
+      maghrib: !hasAny,
+      isha: !hasAny,
+    };
+    await saveDailyCompleted(nextMap, yKey);
+    setCompletedPrayers((prev) => ({ ...prev }));
+    triggerTestFeedback("history", `Yesterday's history record ${!hasAny ? "marked 5/5 completed" : "reset"}!`);
   };
 
   // Sync prayer times with online API (fallback to local astronomical calculation)
@@ -1087,13 +1253,25 @@ export function App() {
                       </div>
                     </div>
 
-                    <button
-                      className={`btn-card-prayed ${isNextPrayed ? "done" : "pending"}`}
-                      onClick={() => togglePrayer(displayNext.prayer)}
-                    >
-                      {isNextPrayed && <Check size={15} strokeWidth={2.5} />}
-                      <span>{isNextPrayed ? "Prayed" : "I've Prayed"}</span>
-                    </button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <button
+                        className={`btn-card-prayed ${isNextPrayed ? "done" : "pending"}`}
+                        onClick={() => togglePrayer(displayNext.prayer)}
+                        style={{ flex: 1 }}
+                      >
+                        {isNextPrayed && <Check size={15} strokeWidth={2.5} />}
+                        <span>{isNextPrayed ? "Prayed" : "I've Prayed"}</span>
+                      </button>
+                      <button
+                        className="btn-quick-test"
+                        onClick={() => void testAdhanNotification(displayNext.prayer)}
+                        title="Test Windows notification & adhan audio"
+                        style={{ padding: "0 12px", height: 44, borderRadius: 12 }}
+                      >
+                        <Bell size={14} />
+                        <span>Test Notif</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Card 2: Five Daily Prayers */}
@@ -1159,7 +1337,17 @@ export function App() {
                         <Target size={16} />
                         <span>Today's Salah</span>
                       </div>
-                      <span className="today-salah-header-pill">{completedCount} of 5 completed</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span className="today-salah-header-pill">{completedCount} of 5 completed</span>
+                        <button
+                          className="btn-quick-test"
+                          onClick={() => testSolemnConfirmation()}
+                          title="Test Solemn Confirmation Oath Modal"
+                        >
+                          <ShieldCheck size={12} />
+                          <span>Test Oath</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="today-salah-track">
@@ -1491,6 +1679,16 @@ export function App() {
                     <p className="view-subtitle">Build consistent prayer habits and track your spiritual growth.</p>
                   </div>
                 </div>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn-quick-test" onClick={() => void testFocusMode()}>
+                    <EyeOff size={13} />
+                    <span>Test Focus Mode</span>
+                  </button>
+                  <button className="btn-quick-test" onClick={() => void testRecurringReminder()}>
+                    <Clock size={13} />
+                    <span>Test Recurring Alert</span>
+                  </button>
+                </div>
               </div>
 
               <div className="view-card-grid">
@@ -1588,50 +1786,145 @@ export function App() {
                   </button>
                   <div>
                     <h2 className="view-title">Prayer History & Streak</h2>
-                    <p className="view-subtitle">Review your consistency over the last week and month.</p>
+                    <p className="view-subtitle">Review your consistency and journal over the last week.</p>
                   </div>
+                </div>
+                <div style={{ marginLeft: "auto" }}>
+                  <button className="btn-quick-test" onClick={testToggleYesterdayRecord}>
+                    <History size={13} />
+                    <span>Test Yesterday's Record</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="salah-card">
-                <div className="card-header-title" style={{ marginBottom: 16 }}>
-                  <Calendar size={16} />
-                  <span>Last 7 Days Prayer Journal</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12, textAlign: "center" }}>
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayName, idx) => {
-                    const active = streakDays[idx % streakDays.length];
-                    return (
+              {/* 7-Day Consistency Banner */}
+              <div className="view-card-grid" style={{ marginBottom: 16 }}>
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 12 }}>
+                    <Calendar size={16} />
+                    <span>7-Day Habit Overview</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                    <span>Consistency Rate</span>
+                    <strong style={{ color: "#1E5144" }}>
+                      {Math.round((streakDays.filter(Boolean).length / 7) * 100)}%
+                    </strong>
+                  </div>
+                  <div className="today-salah-track" style={{ marginBottom: 16 }}>
+                    <div
+                      className="today-salah-fill"
+                      style={{ width: `${(streakDays.filter(Boolean).length / 7) * 100}%` }}
+                    />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, textAlign: "center" }}>
+                    {streakDays.map((active, idx) => (
                       <div
                         key={idx}
                         style={{
                           background: active ? "#E8F3EE" : "#F8FAF9",
+                          borderRadius: 8,
+                          padding: "8px 4px",
                           border: "1px solid #E8ECE9",
-                          borderRadius: 12,
-                          padding: "16px 8px",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          gap: 8,
                         }}
                       >
-                        <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>{dayName}</span>
                         <div
                           style={{
-                            width: 32,
-                            height: 32,
+                            width: 24,
+                            height: 24,
                             borderRadius: "50%",
                             background: active ? "#1E5144" : "#E5E7EB",
                             color: "#FFFFFF",
                             display: "grid",
                             placeItems: "center",
+                            margin: "0 auto 4px",
                           }}
                         >
-                          {active ? <Check size={16} strokeWidth={2.5} /> : <Minus size={16} />}
+                          {active ? <Check size={12} strokeWidth={2.5} /> : <Minus size={12} />}
                         </div>
-                        <span style={{ fontSize: 11, color: active ? "#1E5144" : "#9CA3AF", fontWeight: 600 }}>
-                          {active ? "Complete" : "Pending"}
+                        <span style={{ fontSize: 10, color: active ? "#1E5144" : "#9CA3AF", fontWeight: 600 }}>
+                          {active ? "Done" : "Miss"}
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="salah-card">
+                  <div className="card-header-title" style={{ marginBottom: 12 }}>
+                    <Target size={16} />
+                    <span>Consistency Milestones</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ background: "#F8FAF9", padding: "12px 14px", borderRadius: 10, border: "1px solid #E8ECE9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ fontSize: 13, color: "#111827" }}>Active Consistent Streak</strong>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280" }}>Days with at least 3 obligatory prayers</p>
+                      </div>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: "#1E5144" }}>
+                        {streakDays.filter(Boolean).length} Days
+                      </span>
+                    </div>
+
+                    <div style={{ background: "#F8FAF9", padding: "12px 14px", borderRadius: 10, border: "1px solid #E8ECE9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ fontSize: 13, color: "#111827" }}>Today's Performance</strong>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6B7280" }}>Fulfilled obligations today</p>
+                      </div>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: "#1E5144" }}>
+                        {completedCount} / 5
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed 7-Day Journal with clickable prayer badges */}
+              <div className="salah-card">
+                <div className="card-header-bar" style={{ marginBottom: 16 }}>
+                  <div className="card-header-title">
+                    <History size={16} />
+                    <span>Daily Prayer Journal (Click prayer badge to toggle)</span>
+                  </div>
+                </div>
+
+                <div className="history-journal-container">
+                  {pastDaysHistory.map((day) => {
+                    const isPerfect = day.completedCount === 5;
+                    return (
+                      <div key={day.dateKey} className="history-day-card">
+                        <div className="history-day-header">
+                          <div className="history-day-title-group">
+                            <strong className="history-day-name">{day.label}</strong>
+                            <span className={`status-pill ${isPerfect ? "completed" : day.completedCount >= 3 ? "current" : "upcoming"}`}>
+                              {day.completedCount} of 5 Obligatory
+                            </span>
+                          </div>
+                          <div style={{ width: 100 }}>
+                            <div className="today-salah-track">
+                              <div
+                                className="today-salah-fill"
+                                style={{ width: `${(day.completedCount / 5) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="history-prayer-badges-row">
+                          {obligatoryPrayers.map((p) => {
+                            const isPrayed = day.records[p];
+                            return (
+                              <button
+                                key={p}
+                                className={`history-badge-btn ${isPrayed ? "done" : "pending"}`}
+                                onClick={() => void togglePastPrayerRecord(day.dateKey, p)}
+                                title={`Click to mark ${prayerNames[p]} as ${isPrayed ? "unprayed" : "prayed"}`}
+                              >
+                                {isPrayed ? <Check size={12} strokeWidth={2.8} /> : <Minus size={12} />}
+                                <span>{prayerNames[p]}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
@@ -1696,6 +1989,13 @@ export function App() {
                   <EyeOff size={15} />
                   <span>Focus Mode</span>
                 </button>
+                <button
+                  className={`settings-tab-btn ${settingsTab === "testing" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("testing")}
+                >
+                  <FlaskConical size={15} />
+                  <span>Testing Lab</span>
+                </button>
               </nav>
 
               <div className="settings-body-card">
@@ -1735,6 +2035,9 @@ export function App() {
                     settings={settings}
                     update={updateSettings}
                     language={language}
+                    onTestAdhan={() => void testAdhanNotification()}
+                    onTestRecurring={() => void testRecurringReminder()}
+                    onTestSolemn={() => testSolemnConfirmation()}
                   />
                 )}
                 {settingsTab === "focus" && (
@@ -1742,7 +2045,18 @@ export function App() {
                     settings={settings}
                     update={updateSettings}
                     language={language}
-                    onPreview={() => beginFocusMode(clock.next?.prayer)}
+                    onPreview={() => void testFocusMode()}
+                  />
+                )}
+                {settingsTab === "testing" && (
+                  <TestingTab
+                    settings={settings}
+                    update={updateSettings}
+                    onTestAdhan={() => void testAdhanNotification()}
+                    onTestRecurring={() => void testRecurringReminder()}
+                    onTestFocus={() => void testFocusMode()}
+                    onTestSolemn={() => testSolemnConfirmation()}
+                    onTestHistory={() => void testToggleYesterdayRecord()}
                   />
                 )}
               </div>
@@ -1750,6 +2064,24 @@ export function App() {
           )}
         </main>
       </div>
+
+      {pendingSolemnPrayer && (
+        <SolemnConfirmationModal
+          prayer={pendingSolemnPrayer}
+          language={language}
+          onConfirm={() => {
+            markPrayerCompleted(pendingSolemnPrayer);
+          }}
+          onCancel={() => setPendingSolemnPrayer(null)}
+        />
+      )}
+
+      {testFeedback && (
+        <div className="test-feedback-toast">
+          <CheckCircle2 size={18} />
+          <span>{testFeedback.message}</span>
+        </div>
+      )}
 
       {showLocationModal && (
         <LocationPermissionModal
@@ -1769,7 +2101,7 @@ export function App() {
 
       {focusPreview && (
         <FocusPreview
-          session={focusSession ?? { prayer: focusPrayer, targetEndTime: Date.now() + 15 * 60_000 }}
+          session={focusSession ?? { prayer: focusPrayer, targetEndTime: Date.now() + (settings.focusDurationMinutes ?? 15) * 60_000 }}
           settings={settings}
           language={language}
           onConfirmPrayed={() => void confirmPrayerAndEndFocus(focusSession?.prayer ?? focusPrayer)}
@@ -2389,7 +2721,19 @@ function CalculationTab({
   );
 }
 
-function NotificationsTab({ settings, update, language }: SettingsTabProps & { language: SupportedLanguage }) {
+function NotificationsTab({
+  settings,
+  update,
+  language,
+  onTestAdhan,
+  onTestRecurring,
+  onTestSolemn,
+}: SettingsTabProps & {
+  language: SupportedLanguage;
+  onTestAdhan?: () => void;
+  onTestRecurring?: () => void;
+  onTestSolemn?: () => void;
+}) {
   return (
     <>
       <Section title="Master Controls">
@@ -2398,7 +2742,88 @@ function NotificationsTab({ settings, update, language }: SettingsTabProps & { l
           subLabel="Shows desktop alerts and adhan audio when prayer time arrives"
           control={<Switch on={settings.masterNotificationsEnabled} onClick={() => update({ masterNotificationsEnabled: !settings.masterNotificationsEnabled })} />}
         />
+        {onTestAdhan && (
+          <SettingRow
+            label="Test prayer notification"
+            subLabel="Send a live Windows desktop alert and play audio right now"
+            control={
+              <button className="setting-btn" onClick={onTestAdhan}>
+                <Bell size={14} />
+                <span>Test Windows Notification</span>
+              </button>
+            }
+          />
+        )}
       </Section>
+
+      <Section title="Recurring Reminders (ধারাবাহিক রিমাইন্ডার)">
+        <SettingRow
+          label="Recurring prayer alerts"
+          subLabel="Periodic reminders until you confirm the prayer has been performed"
+          control={
+            <Switch
+              on={settings.recurringReminderEnabled ?? true}
+              onClick={() => update({ recurringReminderEnabled: !(settings.recurringReminderEnabled ?? true) })}
+            />
+          }
+        />
+        <SettingRow
+          label="Reminder interval"
+          subLabel="Frequency of reminder notifications during active waqt"
+          control={
+            <NativeSelect
+              value={String(settings.recurringReminderIntervalMinutes ?? 5)}
+              onChange={(val) => update({ recurringReminderIntervalMinutes: Number(val) })}
+              options={[
+                ["2", "Every 2 minutes"],
+                ["3", "Every 3 minutes"],
+                ["5", "Every 5 minutes (Recommended)"],
+                ["10", "Every 10 minutes"],
+                ["15", "Every 15 minutes"],
+                ["20", "Every 20 minutes"],
+              ]}
+            />
+          }
+        />
+        {onTestRecurring && (
+          <SettingRow
+            label="Test recurring alert"
+            subLabel="Dispatch a simulated recurring reminder alert immediately"
+            control={
+              <button className="setting-btn" onClick={onTestRecurring}>
+                <Clock size={14} />
+                <span>Test Recurring Alert</span>
+              </button>
+            }
+          />
+        )}
+      </Section>
+
+      <Section title="Solemn Oath Confirmation (নামাজ শপথ মোড)">
+        <SettingRow
+          label="Require solemn oath before marking done"
+          subLabel="Prompts sacred oath: 'আল্লাহর শপথ, আমি নামাজ আদায় করেছি' before recording completion"
+          control={
+            <Switch
+              on={settings.solemnConfirmationEnabled ?? true}
+              onClick={() => update({ solemnConfirmationEnabled: !(settings.solemnConfirmationEnabled ?? true) })}
+            />
+          }
+        />
+        {onTestSolemn && (
+          <SettingRow
+            label="Test solemn oath modal"
+            subLabel="Preview the sacred Quranic oath confirmation dialog"
+            control={
+              <button className="setting-btn" onClick={onTestSolemn}>
+                <ShieldCheck size={14} />
+                <span>Test Solemn Oath Dialog</span>
+              </button>
+            }
+          />
+        )}
+      </Section>
+
       <Section title="Default Sound & Audio">
         <SettingRow
           label="Notification Sound"
@@ -2447,15 +2872,55 @@ function FocusTab({ settings, update, language, onPreview }: SettingsTabProps & 
       <Section title="Focus Mode Settings">
         <SettingRow
           label="Enable Focus Mode"
-          subLabel="Blocks distractions and provides gentle reminders during prayer times"
+          subLabel="Blocks distractions and opens fullscreen accountability session"
           control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />}
         />
         <SettingRow
-          label="Focus duration (minutes)"
+          label="Trigger deadline lead time"
+          subLabel="Launch fullscreen accountability N minutes before waqt ends"
           control={
-            <NumberInput
-              value={settings.focusDurationMinutes}
-              onChange={(focusDurationMinutes) => update({ focusDurationMinutes })}
+            <NativeSelect
+              value={String(settings.focusLeadMinutes ?? 45)}
+              onChange={(val) => update({ focusLeadMinutes: Number(val) })}
+              options={[
+                ["15", "15 minutes before deadline"],
+                ["30", "30 minutes before deadline"],
+                ["45", "45 minutes before deadline (Default)"],
+                ["60", "60 minutes before deadline"],
+              ]}
+            />
+          }
+        />
+        <SettingRow
+          label="Focus duration (minutes)"
+          subLabel="Duration of the fullscreen countdown session"
+          control={
+            <NativeSelect
+              value={String(settings.focusDurationMinutes ?? 15)}
+              onChange={(val) => update({ focusDurationMinutes: Number(val) })}
+              options={[
+                ["5", "5 minutes"],
+                ["10", "10 minutes"],
+                ["15", "15 minutes (Standard)"],
+                ["20", "20 minutes"],
+                ["30", "30 minutes"],
+              ]}
+            />
+          }
+        />
+        <SettingRow
+          label="Blur intensity"
+          subLabel="Visual blur applied behind the focus card"
+          control={
+            <NativeSelect
+              value={settings.focusBlurIntensity ?? "medium"}
+              onChange={(focusBlurIntensity) => update({ focusBlurIntensity })}
+              options={[
+                ["low", "Subtle (Low blur)"],
+                ["medium", "Balanced (Medium blur)"],
+                ["high", "Deep (High blur)"],
+                ["opaque", "Opaque (Complete block)"],
+              ]}
             />
           }
         />
@@ -2469,12 +2934,174 @@ function FocusTab({ settings, update, language, onPreview }: SettingsTabProps & 
           control={
             <button className="setting-btn" onClick={onPreview}>
               <EyeOff size={14} />
-              <span>Preview Focus Mode</span>
+              <span>Preview Focus Mode Now</span>
             </button>
           }
         />
       </Section>
     </>
+  );
+}
+
+function TestingTab({
+  settings,
+  update,
+  onTestAdhan,
+  onTestRecurring,
+  onTestFocus,
+  onTestSolemn,
+  onTestHistory,
+}: SettingsTabProps & {
+  onTestAdhan: () => void;
+  onTestRecurring: () => void;
+  onTestFocus: () => void;
+  onTestSolemn: () => void;
+  onTestHistory: () => void;
+}) {
+  return (
+    <div>
+      <div className="test-lab-header">
+        <h3 className="test-lab-title">Feature Diagnostics & Test Lab (সব ফিচার টেস্ট প্যানেল)</h3>
+        <p className="test-lab-desc">
+          এখানে প্রতিটি ফিচারের জন্য লাইভ টেস্ট বাটন রয়েছে। আপনি ওয়াক্তের সময়ের অপেক্ষা না করেই এখনই প্রতিটি ফিচার চেক করতে পারেন।
+        </p>
+      </div>
+
+      <div className="test-lab-grid">
+        {/* Test 1: Prayer Adhan & Windows Notification */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <Bell size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">1. Prayer Adhan & Windows Notification</h4>
+                <p className="test-lab-card-desc">
+                  Windows notification সহ আযান ও ওয়াক্ত শুরুর অ্যালার্ট চেক করুন।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>সাউন্ড: {settings.notificationDefaults.sound}</span>
+            <span style={{ color: "#1E5144", fontWeight: 700 }}>
+              {settings.masterNotificationsEnabled ? "সক্রিয়" : "বন্ধ"}
+            </span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestAdhan}>
+            <Bell size={14} />
+            <span>Test Adhan & Windows Notification</span>
+          </button>
+        </div>
+
+        {/* Test 2: Recurring Reminder */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <Clock size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">2. Recurring Reminder (ধারাবাহিক রিমাইন্ডার)</h4>
+                <p className="test-lab-card-desc">
+                  নামাজ কনফার্ম না করা পর্যন্ত প্রতি {settings.recurringReminderIntervalMinutes ?? 5} মিনিট পর পর রিমাইন্ডার পাঠায়।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>ব্যবধান: প্রতি {settings.recurringReminderIntervalMinutes ?? 5} মিনিট</span>
+            <span style={{ color: (settings.recurringReminderEnabled ?? true) ? "#1E5144" : "#9CA3AF", fontWeight: 700 }}>
+              {(settings.recurringReminderEnabled ?? true) ? "চালু" : "বন্ধ"}
+            </span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestRecurring}>
+            <Clock size={14} />
+            <span>Test Recurring Reminder Alert</span>
+          </button>
+        </div>
+
+        {/* Test 3: Fullscreen Focus Mode */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <EyeOff size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">3. Accountability Focus Mode (ফুলস্ক্রিন)</h4>
+                <p className="test-lab-card-desc">
+                  ওয়াক্তের শেষ {settings.focusLeadMinutes ?? 45} মিনিট আগে ফুলস্ক্রিন হয়ে {settings.focusDurationMinutes ?? 15} মিনিটের কাউন্টডাউন শুরু করে।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>সময়সীমা: {settings.focusDurationMinutes ?? 15} মিনিট</span>
+            <span style={{ color: settings.focusModeEnabled ? "#1E5144" : "#9CA3AF", fontWeight: 700 }}>
+              {settings.focusModeEnabled ? "সক্রিয়" : "বন্ধ"}
+            </span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestFocus}>
+            <EyeOff size={14} />
+            <span>Test Fullscreen Focus Countdown</span>
+          </button>
+        </div>
+
+        {/* Test 4: Solemn Oath Modal */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <ShieldCheck size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">4. Solemn Prayer Oath (নামাজ শপথ মোড)</h4>
+                <p className="test-lab-card-desc">
+                  "আল্লাহর শপথ, আমি নামাজ আদায় করেছি" ডায়ালগ ও কুরআনের আয়াত প্রদর্শিত হয়।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>অবস্থা: {settings.solemnConfirmationEnabled ? "শপথ বাধ্যতামূলক" : "সাধারণ চেক"}</span>
+            <span style={{ color: settings.solemnConfirmationEnabled ? "#1E5144" : "#9CA3AF", fontWeight: 700 }}>
+              {settings.solemnConfirmationEnabled ? "চালু" : "বন্ধ"}
+            </span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestSolemn}>
+            <ShieldCheck size={14} />
+            <span>Test Solemn Oath Confirmation</span>
+          </button>
+        </div>
+
+        {/* Test 5: History & Streak */}
+        <div className="test-lab-card">
+          <div>
+            <div className="test-lab-card-top">
+              <div className="test-lab-icon">
+                <History size={18} />
+              </div>
+              <div>
+                <h4 className="test-lab-card-title">5. Daily Salah Tracking & Past History</h4>
+                <p className="test-lab-card-desc">
+                  গত ৭ দিনের হিস্ট্রি ও স্ট্রিক আপডেট যাচাইয়ের জন্য গতকালের রেকর্ড টগল করুন।
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="test-lab-card-status">
+            <span>স্টোরেজ: লোকাল ও টোরি স্টোর সিঙ্কড</span>
+            <span style={{ color: "#1E5144", fontWeight: 700 }}>সক্রিয়</span>
+          </div>
+          <button className="test-lab-btn-action" onClick={onTestHistory}>
+            <History size={14} />
+            <span>Toggle Yesterday Test Record</span>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2520,7 +3147,7 @@ function FocusPreview({
     return () => clearInterval(id);
   }, []);
 
-  const totalDuration = 15 * 60; // 15-minute countdown (900s)
+  const totalDuration = (settings.focusDurationMinutes ?? 15) * 60;
   const remainingSeconds = Math.max(0, Math.floor((session.targetEndTime - nowMs) / 1000));
   const isFinished = remainingSeconds === 0;
 
@@ -2536,7 +3163,7 @@ function FocusPreview({
       <div className="focus-card">
         <div className="focus-badge">
           <Clock size={14} />
-          <span>45-Minute Window Deadline Accountability</span>
+          <span>{settings.focusLeadMinutes ?? 45}-Minute Window Deadline Accountability</span>
         </div>
 
         <h2 className="focus-title">Time for {prayerLabel(language, session.prayer)}</h2>
@@ -2544,7 +3171,7 @@ function FocusPreview({
           Take a peaceful pause, step away from distractions, and stand before Allah with complete presence of heart.
         </p>
 
-        {/* 15-Minute Circular Countdown Clock */}
+        {/* Circular Countdown Clock */}
         <div className="focus-countdown-container">
           <svg className="focus-countdown-svg" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="45" className="focus-ring-bg" />
@@ -2559,7 +3186,7 @@ function FocusPreview({
           <div className="focus-countdown-time">
             <span className="countdown-digits">{timeFormatted}</span>
             <span className="countdown-label">
-              {isFinished ? "Time Complete" : "15m Focus Remaining"}
+              {isFinished ? "Time Complete" : `${settings.focusDurationMinutes ?? 15}m Focus Remaining`}
             </span>
           </div>
         </div>
@@ -2582,6 +3209,70 @@ function FocusPreview({
               Emergency Exit / Desktop
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SolemnConfirmationModal({
+  prayer,
+  language,
+  onConfirm,
+  onCancel,
+}: {
+  prayer: Prayer;
+  language: SupportedLanguage;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="solemn-modal-backdrop" onClick={onCancel}>
+      <div className="solemn-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="solemn-modal-header">
+          <div className="solemn-icon-ring">
+            <ShieldCheck size={28} />
+          </div>
+          <h3 className="solemn-modal-title">
+            {language === "bn" ? "নামাজ আদায়ের সত্য শপথ" : "Solemn Prayer Confirmation"}
+          </h3>
+          <p className="solemn-modal-subtitle">
+            {language === "bn"
+              ? "আল্লাহর সামনে দাঁড়িয়ে সত্যনিষ্ঠার সাথে নিশ্চিত করুন"
+              : "Confirm your prayer with solemn truth before Allah"}
+          </p>
+        </div>
+
+        <div className="solemn-quran-box">
+          <div className="solemn-quran-arabic">
+            إِنَّ الصَّلَاةَ كَانَتْ عَلَى الْمُؤْمِنِينَ كِتَابًا مَّوْقُوتًا
+          </div>
+          <div className="solemn-quran-meaning">
+            "নিশ্চয়ই নির্ধারিত সময়ে নামাজ আদায় করা মুমিনদের উপর অবশ্য কর্তব্য।"
+            <span className="solemn-quran-surah">— সূরা আন-নিসা (৪:১০৩)</span>
+          </div>
+        </div>
+
+        <div className="solemn-oath-box">
+          <div className="solemn-oath-arabic">
+            وَاللَّهِ لَقَدْ صَلَّيْتُ ({prayerNames[prayer]})
+          </div>
+          <div className="solemn-oath-text">
+            <strong>আল্লাহর শপথ,</strong> আমি একান্ত নিষ্ঠা ও আন্তরিকতার সাথে <strong>{prayerNames[prayer]}</strong> নামাজ আদায় করেছি।
+          </div>
+          <div className="solemn-oath-en">
+            "I swear by Allah that I have offered the {prayerNames[prayer]} prayer sincerely and fulfilled my duty."
+          </div>
+        </div>
+
+        <div className="solemn-modal-actions">
+          <button className="btn-solemn-confirm" onClick={onConfirm}>
+            <Check size={18} strokeWidth={2.6} />
+            <span>আল্লাহর শপথ, নামাজ পড়েছি (Confirm)</span>
+          </button>
+          <button className="btn-solemn-cancel" onClick={onCancel}>
+            <span>এখনও পড়িনি / বাতিল করুন</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2812,19 +3503,24 @@ function buildRuntimeSchedule(
         }
       }
 
-      // Every 5-Minute Recurring Reminder (Only until prayer confirmed or deadline window)
-      if (isObligatory(entry.prayer) && settings.masterNotificationsEnabled && cfg.notify && !isCompleted && windowEnd) {
+      // Recurring Reminder (Only until prayer confirmed or deadline window; customizable via settings)
+      const recurringEnabled = settings.recurringReminderEnabled ?? true;
+      const recurringInterval = Math.max(1, settings.recurringReminderIntervalMinutes ?? 5);
+      const focusLead = Math.max(5, settings.focusLeadMinutes ?? 45);
+      const focusDuration = Math.max(1, settings.focusDurationMinutes ?? 15);
+
+      if (isObligatory(entry.prayer) && recurringEnabled && settings.masterNotificationsEnabled && cfg.notify && !isCompleted && windowEnd) {
         const startMs = entry.time.getTime();
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
-        const intervalMs = 5 * 60_000;
+        const intervalMs = recurringInterval * 60_000;
         let count = 1;
         for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
           events.push({
-            id: `${dayKey}:${entry.prayer}:remind_5m_${count}`,
+            id: `${dayKey}:${entry.prayer}:remind_${recurringInterval}m_${count}`,
             prayer: entry.prayer,
             atMs: t,
-            title: `${label} Reminder (${count * 5}m elapsed)`,
+            title: `${label} Reminder (${count * recurringInterval}m elapsed)`,
             body: `Have you prayed ${label}? Prayer window is active. Click to confirm.`,
             playSound: true,
             sound: "softChime",
@@ -2835,16 +3531,16 @@ function buildRuntimeSchedule(
         }
       }
 
-      // 45-Minute Window Deadline Focus Mode (if not confirmed)
+      // Window Deadline Focus Mode (Lead time & duration customizable via settings)
       if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && !isCompleted && windowEnd) {
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         if (deadlineMs > entry.time.getTime()) {
           events.push({
-            id: `${dayKey}:${entry.prayer}:focus_deadline_45m`,
+            id: `${dayKey}:${entry.prayer}:focus_deadline_${focusLead}m`,
             prayer: entry.prayer,
             atMs: deadlineMs,
             title: `${label} Deadline Focus`,
-            body: `45 minutes left in ${label} window! 15-minute accountability session started.`,
+            body: `${focusLead} minutes left in ${label} window! ${focusDuration}-minute accountability session started.`,
             playSound: true,
             sound: "softChime",
             playFullAdhan: false,
@@ -2880,6 +3576,10 @@ async function fireDueAlerts({
 }) {
   const notificationWindowMs = 1_150;
   const days = [today, tomorrow];
+  const recurringEnabled = settings.recurringReminderEnabled ?? true;
+  const recurringInterval = Math.max(1, settings.recurringReminderIntervalMinutes ?? 5);
+  const focusLead = Math.max(5, settings.focusLeadMinutes ?? 45);
+
   for (let dIdx = 0; dIdx < days.length; dIdx++) {
     const day = days[dIdx];
     const nextDay = dIdx === 0 ? tomorrow : day;
@@ -2903,18 +3603,18 @@ async function fireDueAlerts({
         events.push({ kind: "iqamah", at: new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000), title: `${label} iqamah`, body: `${label} iqamah reminder.`, sound: false });
       }
 
-      // 5-Minute Recurring Reminders
-      if (isObligatory(entry.prayer) && windowEnd) {
+      // Recurring Reminders (Interval from settings)
+      if (isObligatory(entry.prayer) && recurringEnabled && windowEnd) {
         const startMs = entry.time.getTime();
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
-        const intervalMs = 5 * 60_000;
+        const intervalMs = recurringInterval * 60_000;
         let count = 1;
         for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
           events.push({
-            kind: `remind_5m_${count}`,
+            kind: `remind_${recurringInterval}m_${count}`,
             at: new Date(t),
-            title: `${label} Reminder (${count * 5}m elapsed)`,
+            title: `${label} Reminder (${count * recurringInterval}m elapsed)`,
             body: `Have you prayed ${label}? Prayer window is active. Click to confirm.`,
             sound: true,
           });
@@ -2932,11 +3632,11 @@ async function fireDueAlerts({
         }
       }
 
-      // 45-Minute Window Deadline Focus
+      // Window Deadline Focus (Lead time from settings)
       if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && windowEnd) {
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         if (deadlineMs > entry.time.getTime()) {
-          const key = `${dayKey}:${entry.prayer}:focus_deadline_45m`;
+          const key = `${dayKey}:${entry.prayer}:focus_deadline_${focusLead}m`;
           if (!fired.has(key) && Math.abs(now.getTime() - deadlineMs) <= notificationWindowMs) {
             fired.add(key);
             await showFocus(entry.prayer);
@@ -2958,6 +3658,10 @@ function nextAlertCheckDelay(
 ): number {
   const upcoming: number[] = [];
   const days = [today, tomorrow];
+  const recurringEnabled = settings.recurringReminderEnabled ?? true;
+  const recurringInterval = Math.max(1, settings.recurringReminderIntervalMinutes ?? 5);
+  const focusLead = Math.max(5, settings.focusLeadMinutes ?? 45);
+
   for (let dIdx = 0; dIdx < days.length; dIdx++) {
     const day = days[dIdx];
     const nextDay = dIdx === 0 ? tomorrow : day;
@@ -2979,24 +3683,24 @@ function nextAlertCheckDelay(
         }
       }
 
-      // Check upcoming 5-minute reminders
-      if (isObligatory(entry.prayer) && windowEnd) {
+      // Check upcoming recurring reminders
+      if (isObligatory(entry.prayer) && recurringEnabled && windowEnd) {
         const startMs = entry.time.getTime();
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         const maxReminderMs = deadlineMs > startMs ? deadlineMs : windowEnd.getTime();
-        const intervalMs = 5 * 60_000;
+        const intervalMs = recurringInterval * 60_000;
         let count = 1;
         for (let t = startMs + intervalMs; t < maxReminderMs; t += intervalMs) {
-          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:remind_5m_${count}`, new Date(t));
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:remind_${recurringInterval}m_${count}`, new Date(t));
           count++;
         }
       }
 
-      // Check upcoming 45-min deadline focus
+      // Check upcoming deadline focus
       if (isObligatory(entry.prayer) && shouldFocus(settings, entry.prayer) && windowEnd) {
-        const deadlineMs = windowEnd.getTime() - 45 * 60_000;
+        const deadlineMs = windowEnd.getTime() - focusLead * 60_000;
         if (deadlineMs > entry.time.getTime()) {
-          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus_deadline_45m`, new Date(deadlineMs));
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus_deadline_${focusLead}m`, new Date(deadlineMs));
         }
       }
     }

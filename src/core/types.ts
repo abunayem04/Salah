@@ -103,10 +103,14 @@ export interface AppSettings {
   showPrayerWidget: boolean;
   hijriDayAdjustment: number;
   focusModeEnabled: boolean;
+  focusLeadMinutes: number;
   focusDurationMinutes: number;
   focusBlurIntensity: FocusBlurIntensity;
   focusTrigger: FocusTrigger;
   focusEmergencyExitEnabled: boolean;
+  recurringReminderEnabled: boolean;
+  recurringReminderIntervalMinutes: number;
+  solemnConfirmationEnabled: boolean;
   launchAtLogin: boolean;
   languageOverride?: string;
   masterNotificationsEnabled: boolean;

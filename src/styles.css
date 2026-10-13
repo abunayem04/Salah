@@ -2213,3 +2213,423 @@ button:not(:disabled), select, input {
 .location-select-custom:focus {
   border-color: var(--salah-green);
 }
+
+/* ==========================================================================
+   SOLEMN OATH CONFIRMATION MODAL
+   ========================================================================== */
+.solemn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 35, 27, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 16px;
+}
+
+.solemn-modal-card {
+  position: relative;
+  background: #FFFFFF;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 60px rgba(15, 35, 27, 0.35);
+  border: 1px solid rgba(30, 81, 68, 0.15);
+  animation: popScale 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.solemn-modal-header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.solemn-icon-ring {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #E8F3EE;
+  color: var(--salah-green);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  border: 2px solid #CDE2D8;
+}
+
+.solemn-modal-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px;
+}
+
+.solemn-modal-subtitle {
+  font-size: 13px;
+  color: #6B7280;
+  margin: 0;
+}
+
+.solemn-quran-box {
+  background: #F8FAF9;
+  border: 1px solid #E2EAE5;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.solemn-quran-arabic {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1E5144;
+  line-height: 1.6;
+  direction: rtl;
+  font-family: "Amiri", "Traditional Arabic", serif;
+}
+
+.solemn-quran-meaning {
+  font-size: 12px;
+  color: #4B5563;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+.solemn-quran-surah {
+  display: block;
+  font-size: 11px;
+  color: #85928C;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.solemn-oath-box {
+  background: #FFFDF5;
+  border: 1.5px solid #F3E8C4;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.solemn-oath-arabic {
+  font-size: 16px;
+  font-weight: 700;
+  color: #92400E;
+  margin-bottom: 6px;
+  direction: rtl;
+}
+
+.solemn-oath-text {
+  font-size: 13.5px;
+  color: #78350F;
+  line-height: 1.55;
+}
+
+.solemn-oath-en {
+  font-size: 11.5px;
+  color: #B45309;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.solemn-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-solemn-confirm {
+  width: 100%;
+  background: var(--salah-green);
+  color: #FFFFFF;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(30, 81, 68, 0.28);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-solemn-confirm:hover {
+  background: var(--salah-green-hover);
+  transform: translateY(-1px);
+}
+
+.btn-solemn-cancel {
+  width: 100%;
+  background: #F3F4F6;
+  color: #4B5563;
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.btn-solemn-cancel:hover {
+  background: #E5E7EB;
+  color: #111827;
+}
+
+/* ==========================================================================
+   QUICK TEST BUTTONS & TESTING LAB
+   ========================================================================== */
+.btn-quick-test {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid #E5E7EB;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-quick-test:hover {
+  background: #E8F3EE;
+  color: var(--salah-green);
+  border-color: #B5D7C9;
+}
+
+.test-lab-header {
+  margin-bottom: 20px;
+}
+
+.test-lab-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px;
+}
+
+.test-lab-desc {
+  font-size: 12.5px;
+  color: #6B7280;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.test-lab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+
+.test-lab-card {
+  background: #FFFFFF;
+  border: 1.5px solid #E8ECE9;
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.test-lab-card:hover {
+  border-color: #CDE2D8;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.test-lab-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.test-lab-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #E8F3EE;
+  color: var(--salah-green);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.test-lab-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 3px;
+}
+
+.test-lab-card-desc {
+  font-size: 12px;
+  color: #6B7280;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.test-lab-card-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #F8FAF9;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: #4B5563;
+  border: 1px solid #E8ECE9;
+}
+
+.test-lab-btn-action {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  background: #E8F3EE;
+  color: var(--salah-green);
+  border: 1px solid #CDE2D8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.test-lab-btn-action:hover {
+  background: var(--salah-green);
+  color: #FFFFFF;
+  border-color: var(--salah-green);
+}
+
+.test-feedback-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10001;
+  background: var(--salah-green);
+  color: #FFFFFF;
+  padding: 12px 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(30, 81, 68, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  animation: slideInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   DYNAMIC HISTORY JOURNAL
+   ========================================================================== */
+.history-journal-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.history-day-card {
+  background: #FFFFFF;
+  border: 1px solid #E8ECE9;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.history-day-card:hover {
+  border-color: #CDE2D8;
+}
+
+.history-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-day-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-day-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.history-day-date {
+  font-size: 12px;
+  color: #6B7280;
+}
+
+.history-prayer-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-badge-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.history-badge-btn.done {
+  background: #E8F3EE;
+  border-color: #B5D7C9;
+  color: var(--salah-green);
+}
+
+.history-badge-btn.done:hover {
+  background: #D9ECE3;
+}
+
+.history-badge-btn.pending {
+  background: #F9FAFB;
+  border-color: #E5E7EB;
+  color: #9CA3AF;
+}
+
+.history-badge-btn.pending:hover {
+  background: #F3F4F6;
+  color: #4B5563;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popScale {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}

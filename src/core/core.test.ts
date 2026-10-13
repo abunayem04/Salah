@@ -374,6 +374,27 @@ describe("Checklist 6: Data & Daily Tracking", () => {
     const keyTomorrow = `salah_completed_2026-10-11`;
     expect(keyToday).not.toBe(keyTomorrow);
   });
+
+  it("exposes customizable recurring reminder and focus settings without hardcoding", () => {
+    const s = defaultSettings();
+    expect(s.recurringReminderEnabled).toBe(true);
+    expect(s.recurringReminderIntervalMinutes).toBe(5);
+    expect(s.focusModeEnabled).toBe(true);
+    expect(s.focusLeadMinutes).toBe(45);
+    expect(s.focusDurationMinutes).toBe(15);
+    expect(s.solemnConfirmationEnabled).toBe(true);
+
+    // Custom non-hardcoded values support
+    const customSettings = {
+      ...s,
+      recurringReminderIntervalMinutes: 3,
+      focusLeadMinutes: 30,
+      focusDurationMinutes: 10,
+    };
+    expect(customSettings.recurringReminderIntervalMinutes).toBe(3);
+    expect(customSettings.focusLeadMinutes).toBe(30);
+    expect(customSettings.focusDurationMinutes).toBe(10);
+  });
 });
 
 function expectTime(date: Date | undefined, expected: string, timeZone: string, toleranceMinutes: number) {

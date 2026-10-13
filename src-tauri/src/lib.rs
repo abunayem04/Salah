@@ -7,7 +7,7 @@ use tauri::{
 };
 use tauri_plugin_updater::Builder as UpdaterBuilder;
 
-use runtime_scheduler::{init_scheduler, sync_runtime_schedule, RuntimeSchedulePayload, RuntimeSchedulerState};
+use runtime_scheduler::{init_scheduler, RuntimeSchedulePayload, RuntimeSchedulerState};
 
 #[tauri::command]
 fn show_main(app: AppHandle) -> Result<(), String> {
@@ -62,16 +62,37 @@ fn end_focus_mode(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn sync_runtime_schedule(
+  state: tauri::State<'_, RuntimeSchedulerState>,
+  payload: RuntimeSchedulePayload,
+) -> Result<(), String> {
+  runtime_scheduler::sync_runtime_schedule(state, payload)
+}
+
+#[tauri::command]
 fn sync_runtime_schedule_command(
   state: tauri::State<'_, RuntimeSchedulerState>,
   payload: RuntimeSchedulePayload,
 ) -> Result<(), String> {
-  sync_runtime_schedule(state, payload)
+  runtime_scheduler::sync_runtime_schedule(state, payload)
+}
+
+#[tauri::command]
+fn trigger_test_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
+  use tauri_plugin_notification::NotificationExt;
+  app
+    .notification()
+    .builder()
+    .title(title)
+    .body(body)
+    .show()
+    .map_err(|e| e.to_string())
 }
 
 fn start_focus_mode_impl(app: &AppHandle) -> Result<(), String> {
   let window = app.get_webview_window("main").ok_or("main window not found")?;
   window.show().map_err(|e| e.to_string())?;
+  let _ = window.unminimize();
   window.set_always_on_top(true).map_err(|e| e.to_string())?;
   window.set_fullscreen(true).map_err(|e| e.to_string())?;
   window.set_focus().map_err(|e| e.to_string())
@@ -104,7 +125,9 @@ pub fn run() {
       quit_app,
       start_focus_mode,
       end_focus_mode,
-      sync_runtime_schedule_command
+      sync_runtime_schedule,
+      sync_runtime_schedule_command,
+      trigger_test_notification
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
